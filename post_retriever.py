@@ -7,9 +7,9 @@ class PostRetriever():
     def __init__(self): 
         pass 
 
-    def fetch_posts(self): 
+    def fetch_posts(self, synonyms): 
         """
-        Returns the list of posts retrieved since the posts were last fetched. 
+        Returns the list of posts regarding synonyms retrieved since the posts were last fetched. 
         When posts have been fetched from this retriever, they are deleted from 
         temporary storage.  
         """
@@ -19,7 +19,4 @@ class PostRetriever():
         """
         Begins a crawl/scraping session for a set of synonyms (list of strings). 
         """
-
-    def end_search(self): 
-        """
-        Ends the current crawl/scraping session."""
+        pass
