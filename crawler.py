@@ -4,6 +4,7 @@ from bs4 import BeautifulSoup as bs
 from queue import Queue
 import time 
 from time import sleep
+from threading import Thread
 
 class TrustPilotCrawler(PostRetriever):
     """ 
@@ -29,6 +30,43 @@ class TrustPilotCrawler(PostRetriever):
         #      process the same review twice.  
 
         self.host_timer = time.time() 
+        self.crawled_data = []
+        self.synonyms = [] 
+
+    def begin_crawl(self, synonyms = None):
+        if not synonyms == None: 
+            self.add_synonyms(synonyms)
+        
+        crawler_thread = Thread(target = self._threaded_crawl, args=[self.synonym_queue, self.crawled_data], daemon = True)
+        crawler_thread.start()
+         
+
+    def _threaded_crawl(self, queue, data_store):
+        while True: 
+            # Get the next synonym dict in the queue 
+            synonym_urls = queue.get()
+            # Pop the first link in the URL queue
+            url_queue = self._get_url_queue_from_synonym(synonym_urls)
+            url = url_queue.get()
+            # Get reviews from this URL
+            print(f'Processing: {url}')
+            print(f'Currently looking at synonyms: {self.synonyms}')
+            print(f'Number of entries in data store: {len(data_store)}')
+            print('-------------------------------------------------------------------------------------')
+
+            reviews, next_page = self._process_review_page(review_page_url = url)
+            # Store the extracted reviews 
+            for review in reviews: 
+                data_store.append(review)
+            # Requeue the synonym dict 
+            if not next_page == None: 
+                url_queue.put(next_page)
+
+            queue.put(synonym_urls)
+
+    def add_synonyms(self, synonyms):
+        for synonym in synonyms:
+            self.add_synonym(synonym)
 
     def add_synonym(self, synonym): 
         """ 
@@ -37,7 +75,7 @@ class TrustPilotCrawler(PostRetriever):
         All query result links are stored in the synonym's queue, 
         both of which are added to the synonym queue. 
         """
-        review_pages = self._search_for_synonym(synonym)
+        review_pages = self._get_synonym_review_pages(synonym)
         if len(review_pages) == 0: 
             pass # Maybe handle this in another way? 
 
@@ -48,19 +86,33 @@ class TrustPilotCrawler(PostRetriever):
         
         # Add to the global synonym queue
         self.synonym_queue.put({synonym : url_queue})
+        self.synonyms.append(synonym)
 
     def can_ping_yet(self): 
         now = time.time() 
         return now - self.host_timer > 2
 
-    def _search_for_synonym(self, synonym): 
+    def _get_synonym_review_pages(self, synonym): 
         """
         Performs a Trustpilot search for the synonym. 
-        Returns all resulting URLs in a list. 
+        Returns all relevant URLs in a list. 
         """
         soup = self._get_souped_page(f'https://www.trustpilot.com/search?query={synonym}')
         review_pages = soup.findAll("a", {"class": "search-result-heading"}, href = True)
-        return [f'https://www.trustpilot.com{page["href"]}' for page in review_pages]
+        
+        return [f'https://www.trustpilot.com{page["href"]}' for page in review_pages if self._is_relevant_review_page(synonym, page.get_text())]
+
+    def _is_relevant_review_page(self, synonym, link_text): 
+        """
+        Relevant review pages are linked to with the text (query for "Google"):
+            "Google | www.google.com"
+        A non-relevant link could be: 
+            "Google Adwords | www.adwords.google.com"
+        This function returns true if the link text contains a "|", and the 
+        left hand side of the pipe symbol is exactly the synonym.
+        """
+
+        return '|' in link_text and (synonym in link_text.split('|')[0].lower())
 
     def _get_next_synonym(self): 
         """ 
@@ -87,7 +139,6 @@ class TrustPilotCrawler(PostRetriever):
 
         page = urlopen(url)
         self.host_timer = time.time()
-        print(f'Downloaded: {url}')
         return bs(page, features='html5lib')
 
     def _process_review_page(self, review_page_url): 
@@ -96,14 +147,28 @@ class TrustPilotCrawler(PostRetriever):
         After downloading, it extracts all available review texts and returns them. 
         It also returns the "Next page" link if it exists.
         """
+
         soup = self._get_souped_page(review_page_url)
         reviews = soup.findAll('section', {'class' : 'content-section__review-info'})
+
+        next_page = self._get_next_page(soup)
         
-        review_contents = [{'title'  : review.find('h2',  {'class', 'review-info__body__title'}).get_text().strip(),
-                            'body'   : review.find('p',   {'class', 'review-info__body__text'}).get_text().strip()
-                            } for review in reviews]
+        return [
+            {
+                'title'  : review.find('h2',  {'class', 'review-info__body__title'}).get_text().strip(),
+                'body'   : review.find('p',   {'class', 'review-info__body__text'}).get_text().strip()
+            } 
+            for review in reviews], next_page
+
+    def _get_next_page(self, souped_review_page): 
+        next_page = souped_review_page.find('a', {'class', 'pagination-page', 'next-page'}, href = True)
+        if next_page == None: 
+            return None 
         
-        return review_contents
+        return f'https://www.trustpilot.com{next_page["href"]}'
+
+
+        
 
 
 
