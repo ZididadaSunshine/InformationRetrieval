@@ -31,7 +31,7 @@ class TrustPilotCrawler(PostRetriever):
 
         self.host_timer = time.time() 
         self.crawled_data = []
-        self.synonyms = [] 
+        self.synonyms = set() 
 
     def begin_crawl(self, synonyms = None):
         if not synonyms == None: 
@@ -43,26 +43,41 @@ class TrustPilotCrawler(PostRetriever):
 
     def _threaded_crawl(self, queue, data_store):
         while True: 
-            # Get the next synonym dict in the queue 
-            synonym_urls = queue.get()
-            # Pop the first link in the URL queue
-            url_queue = self._get_url_queue_from_synonym(synonym_urls)
-            url = url_queue.get()
-            # Get reviews from this URL
-            print(f'Processing: {url}')
-            print(f'Currently looking at synonyms: {self.synonyms}')
-            print(f'Number of entries in data store: {len(data_store)}')
-            print('-------------------------------------------------------------------------------------')
+            try: 
+                # Get the next synonym dict in the queue 
+                synonym_urls = queue.get()
+                # Pop the first link in the URL queue
+                url_queue = self._get_url_queue_from_synonym(synonym_urls)
+                
+                if url_queue.empty(): 
+                    # The queue should be restarted from the initial Trustpilot search. 
+                    self.add_synonym(self._get_synonym_from_synonym_dict(synonym_urls))
+                    # Jump along
+                    continue
 
-            reviews, next_page = self._process_review_page(review_page_url = url)
-            # Store the extracted reviews 
-            for review in reviews: 
-                data_store.append(review)
-            # Requeue the synonym dict 
-            if not next_page == None: 
-                url_queue.put(next_page)
+                url = url_queue.get()
+                # Get reviews from this URL
+                print(f'Processing: {url}')
+                print(f'Currently looking at synonyms: {self.synonyms}')
+                print(f'Number of entries in data store: {len(data_store)}')
+                print('-------------------------------------------------------------------------------------')
 
-            queue.put(synonym_urls)
+                reviews, next_page = self._get_reviews_from_url(review_page_url = url)
+                # Store the extracted reviews 
+                for review in reviews: 
+                    data_store.append(review)
+                # Requeue the synonym dict 
+                if not next_page == None: 
+                    url_queue.put(next_page)
+
+                queue.put(synonym_urls)
+                # TODO: Check for scheduled data dump 
+                # TODO: Dump data in local database every once in a while. 
+                #       Allow the database to be accessed from anywhere.  
+
+            except Exception as e: 
+                print(f'Exception encountered in crawling thread: {e}')
+                return
 
     def add_synonyms(self, synonyms):
         for synonym in synonyms:
@@ -86,11 +101,12 @@ class TrustPilotCrawler(PostRetriever):
         
         # Add to the global synonym queue
         self.synonym_queue.put({synonym : url_queue})
-        self.synonyms.append(synonym)
+        self.synonyms.add(synonym)
 
     def can_ping_yet(self): 
         now = time.time() 
-        return now - self.host_timer > 2
+        # Return boolean as well as time remaining
+        return now - self.host_timer > 2, 2 - (now - self.host_timer)
 
     def _get_synonym_review_pages(self, synonym): 
         """
@@ -126,6 +142,12 @@ class TrustPilotCrawler(PostRetriever):
         """
         return list(synonym_dict.values())[0]
 
+    def _get_synonym_from_synonym_dict(self, synonym_dict): 
+        """ 
+        Given a {synonym : Queue(URL)} dict, returns the synonym.
+        """
+        return list(synonym_dict.keys())[0]
+
     def _get_souped_page(self, url): 
         """ 
         Gets the webpage pointed to by the URL as a parsed 
@@ -134,14 +156,17 @@ class TrustPilotCrawler(PostRetriever):
         webpages, as it ensures (time) politeness.
         """
         # Check if we can ping Trustpilot yet 
-        while not self.can_ping_yet(): 
-            sleep(0.05) # Wait for 50 milliseconds
+        can_ping, remaining_time = self.can_ping_yet()
+        if not can_ping: 
+            sleep(remaining_time)
 
         page = urlopen(url)
+
+        # Reset timer before returning the souped page
         self.host_timer = time.time()
         return bs(page, features='html5lib')
 
-    def _process_review_page(self, review_page_url): 
+    def _get_reviews_from_url(self, review_page_url): 
         """ 
         Takes a URL for a Trustpilot Review page and downloads it. 
         After downloading, it extracts all available review texts and returns them. 
@@ -156,16 +181,22 @@ class TrustPilotCrawler(PostRetriever):
         return [
             {
                 'title'  : review.find('h2',  {'class', 'review-info__body__title'}).get_text().strip(),
-                'body'   : review.find('p',   {'class', 'review-info__body__text'}).get_text().strip()
+                'body'   : review.find('p',   {'class', 'review-info__body__text'}).get_text().strip(),
+                'date'   : self._get_date(review)
             } 
             for review in reviews], next_page
 
     def _get_next_page(self, souped_review_page): 
-        next_page = souped_review_page.find('a', {'class', 'pagination-page', 'next-page'}, href = True)
+        next_page = souped_review_page.find('a', {'class', 'pagination-page next-page'}, href = True)
         if next_page == None: 
             return None 
-        
         return f'https://www.trustpilot.com{next_page["href"]}'
+
+    def _get_date(self, review): 
+        date = review.find('div', {'class', 'header__verified__date'})
+        date = date.find('time')['datetime']
+        return date
+
 
 
         
