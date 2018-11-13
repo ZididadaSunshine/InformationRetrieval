@@ -66,6 +66,7 @@ class TrustPilotCrawler(PostRetriever):
                 # Store the extracted reviews 
                 for review in reviews: 
                     data_store.append(review)
+                    
                 # Requeue the synonym dict 
                 if not next_page == None: 
                     url_queue.put(next_page)
@@ -174,6 +175,8 @@ class TrustPilotCrawler(PostRetriever):
         """
 
         soup = self._get_souped_page(review_page_url)
+        cards = soup.findAll('section', {'class', 'review-card__content-section'})
+        users = [card.find('h3', {'class', 'consumer-info__details__name'}).get_text() for card in cards]
         reviews = soup.findAll('section', {'class' : 'content-section__review-info'})
 
         next_page = self._get_next_page(soup)
@@ -182,9 +185,10 @@ class TrustPilotCrawler(PostRetriever):
             {
                 'title'  : review.find('h2',  {'class', 'review-info__body__title'}).get_text().strip(),
                 'body'   : review.find('p',   {'class', 'review-info__body__text'}).get_text().strip(),
-                'date'   : self._get_date(review)
+                'date'   : self._get_date(review),
+                'user'   : user.strip()
             } 
-            for review in reviews], next_page
+            for (review, user) in zip(reviews, users)], next_page
 
     def _get_next_page(self, souped_review_page): 
         next_page = souped_review_page.find('a', {'class', 'pagination-page next-page'}, href = True)
