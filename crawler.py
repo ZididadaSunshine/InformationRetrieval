@@ -5,6 +5,7 @@ from queue import Queue
 import time 
 from time import sleep
 from threading import Thread
+import traceback
 
 class TrustPilotCrawler(PostRetriever):
     """ 
@@ -26,12 +27,10 @@ class TrustPilotCrawler(PostRetriever):
         # from the URLs webpage are enqueued in the synonym's URL queue. 
         self.synonym_queue = Queue() 
 
-        #TODO: Maintain a list of review IDs so we can make sure we don't 
-        #      process the same review twice.  
-
         self.host_timer = time.time() 
         self.crawled_data = []
         self.synonyms = set() 
+        self.seen_reviews = {}
 
     def begin_crawl(self, synonyms = None):
         if not synonyms == None: 
@@ -48,11 +47,12 @@ class TrustPilotCrawler(PostRetriever):
                 synonym_urls = queue.get()
                 # Pop the first link in the URL queue
                 url_queue = self._get_url_queue_from_synonym(synonym_urls)
+                synonym = self._get_synonym_from_synonym_dict(synonym_urls)
                 
                 if url_queue.empty(): 
                     # The queue should be restarted from the initial Trustpilot search. 
-                    self.add_synonym(self._get_synonym_from_synonym_dict(synonym_urls))
-                    # Jump along
+                    self.add_synonym(synonym)
+                    # Skip the rest of this loop
                     continue
 
                 url = url_queue.get()
@@ -64,11 +64,16 @@ class TrustPilotCrawler(PostRetriever):
 
                 reviews, next_page = self._get_reviews_from_url(review_page_url = url)
                 # Store the extracted reviews 
+                already_seen = False
                 for review in reviews: 
-                    data_store.append(review)
-                    
+                    # Only save the review if we have not seen it
+                    already_seen = self.ensure_data_store(synonym, review)
+                    if already_seen: 
+                        # Break out of the for loop.
+                        break
+
                 # Requeue the synonym dict 
-                if not next_page == None: 
+                if (not next_page == None) and not already_seen: 
                     url_queue.put(next_page)
 
                 queue.put(synonym_urls)
@@ -78,6 +83,7 @@ class TrustPilotCrawler(PostRetriever):
 
             except Exception as e: 
                 print(f'Exception encountered in crawling thread: {e}')
+                traceback.print_exc()
                 return
 
     def add_synonyms(self, synonyms):
@@ -200,6 +206,38 @@ class TrustPilotCrawler(PostRetriever):
         date = review.find('div', {'class', 'header__verified__date'})
         date = date.find('time')['datetime']
         return date
+
+    def ensure_data_store(self, synonym, review): 
+        """
+        Returns true if the review has been seen, otherwise false.
+        Takes a review an verifies whether or not this review has been seen before. 
+        This is determined by looking at the date and the user. If it has been seen, 
+        the function does nothing. Otherwise, an entry is made to the seen_reviews 
+        dictionary with this user and date.
+        """
+        user = review['user']
+        date = review['date'].split('T')[0]
+        if synonym not in self.seen_reviews.keys():
+            # We have not even seen the synonym before, so set up its dict structure.
+            self.seen_reviews[synonym] = {date : [user]}
+            self.crawled_data.append(review)
+            return False
+        elif date not in self.seen_reviews[synonym]:
+            # This date has not been created, so we have not seen it either. 
+            self.seen_reviews[synonym][date] = [user]
+            self.crawled_data.append(review)
+            return False
+        elif user not in self.seen_reviews[synonym][date]: 
+            # We have not seen this user post today, so add the review. 
+            self.crawled_data.append(review)
+            return False
+        
+        # Otherwise, simply return that we have already seen it
+        print(f'Found a duplicate! {user} at {date}')
+        return True
+
+
+
 
 
 
