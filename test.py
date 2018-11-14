@@ -3,6 +3,7 @@ from time import sleep
 
 cr = TrustPilotCrawler()
 
+result = cr.dump(delete_data = True)
 
 # TODO: Bind the following to a "begin_crawl" endpoint.
 # To begin the crawler (should really only be done once), enter seed URLs like this:
@@ -25,5 +26,13 @@ cr.add_synonym('samsung')
 # TODO: Bind the following to an "end_crawl" endpoint.
 # Let the thread run until we exit the main thread. 
 # The thread is Matt Daemon so it will terminate when this thread terminates. 
-while True: 
-    pass 
+# while True: 
+#     pass 
+
+sleep(10)
+data = cr.dump(delete_data = True)
+
+for d in data: 
+    print(d.name)
+    for p in d.posts: 
+        print(f'    {p.contents}')

@@ -6,6 +6,11 @@ import time
 from time import sleep
 from threading import Thread
 import traceback
+from datetime import datetime
+# Database
+import database
+from database import session, Synonym, Post, SynonymPostAssociation
+from sqlalchemy.orm import joinedload
 
 class TrustPilotCrawler(PostRetriever):
     """ 
@@ -28,7 +33,7 @@ class TrustPilotCrawler(PostRetriever):
         self.synonym_queue = Queue() 
 
         self.host_timer = time.time() 
-        self.crawled_data = []
+        self.crawled_data = {}
         self.synonyms = set() 
         self.seen_reviews = {}
 
@@ -59,7 +64,7 @@ class TrustPilotCrawler(PostRetriever):
                 # Get reviews from this URL
                 print(f'Processing: {url}')
                 print(f'Currently looking at synonyms: {self.synonyms}')
-                print(f'Number of entries in data store: {len(data_store)}')
+                print(f'Number of entries in data store: {len(data_store.values())}')
                 print('-------------------------------------------------------------------------------------')
 
                 reviews, next_page = self._get_reviews_from_url(review_page_url = url)
@@ -135,7 +140,7 @@ class TrustPilotCrawler(PostRetriever):
         left hand side of the pipe symbol is exactly the synonym.
         """
 
-        return '|' in link_text and (synonym in link_text.split('|')[0].lower())
+        return '|' in link_text and (synonym == link_text.split('|')[0].lower().strip())
 
     def _get_next_synonym(self): 
         """ 
@@ -215,26 +220,77 @@ class TrustPilotCrawler(PostRetriever):
         the function does nothing. Otherwise, an entry is made to the seen_reviews 
         dictionary with this user and date.
         """
+        if synonym not in self.crawled_data.keys(): 
+            self.crawled_data[synonym] = []
+
         user = review['user']
         date = review['date'].split('T')[0]
         if synonym not in self.seen_reviews.keys():
             # We have not even seen the synonym before, so set up its dict structure.
             self.seen_reviews[synonym] = {date : [user]}
-            self.crawled_data.append(review)
+            self.commit_review(synonym, review)
             return False
         elif date not in self.seen_reviews[synonym]:
             # This date has not been created, so we have not seen it either. 
             self.seen_reviews[synonym][date] = [user]
-            self.crawled_data.append(review)
+            self.commit_review(synonym, review)
             return False
         elif user not in self.seen_reviews[synonym][date]: 
             # We have not seen this user post today, so add the review. 
-            self.crawled_data.append(review)
+            self.commit_review(synonym, review)
             return False
         
         # Otherwise, simply return that we have already seen it
         print(f'Found a duplicate! {user} at {date}')
         return True
+
+    def _clear_data_store(self): 
+        session.query(Synonym).delete()
+        session.query(Post).delete()
+        session.query(SynonymPostAssociation).delete()
+        session.commit()
+        print(f'Sucessfully deleted all data from DB.')
+
+
+    def dump(self, delete_data = False):
+        """
+        Dumps all stored data for every synonym to the caller. 
+        Also returns a function that, when called, empties the 
+        local data store. 
+        """
+        synonyms = session.query(Synonym).options(joinedload('posts')).all()
+        if delete_data: 
+            self._clear_data_store()
+        return synonyms
+
+    def commit_review(self, synonym, review): 
+        """
+        Commits a synonym <--> post relation to the database. 
+        """
+        existing_synonyms = [synonym.name for synonym in session.query(Synonym)]
+        synonym_exists = synonym in existing_synonyms
+
+        # Post attributes  
+        date = review['date'].split('T')[0]
+        date = datetime.strptime(date, "%Y-%m-%d")
+        contents = f"{review['title']}. {review['body']}"
+
+        oPost = Post(date = date, contents = contents)
+
+        # Check if synonym exists 
+        if synonym_exists: 
+            oSyn = session.query(Synonym).filter_by(name = synonym).first()
+            oSyn.posts.append(oPost)
+
+        else: 
+            oSyn = Synonym(name = synonym)
+            oSyn.posts.append(oPost)
+            session.add(oSyn)
+            print(f'Adding {synonym} to database.')
+
+        session.commit()
+
+        
 
 
 
