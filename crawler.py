@@ -11,6 +11,7 @@ from datetime import datetime
 import database
 from database import session, Synonym, Post, SynonymPostAssociation
 from sqlalchemy.orm import joinedload
+from dbhandler import DBHandler
 
 class TrustPilotCrawler(PostRetriever):
     """ 
@@ -23,6 +24,7 @@ class TrustPilotCrawler(PostRetriever):
     """
 
     def __init__(self): 
+        self.db = DBHandler()
         self.synonyms = []
 
         # The synonym queue is a queue of dictionaries: 
@@ -244,51 +246,17 @@ class TrustPilotCrawler(PostRetriever):
         print(f'Found a duplicate! {user} at {date}')
         return True
 
-    def _clear_data_store(self): 
-        session.query(Synonym).delete()
-        session.query(Post).delete()
-        session.query(SynonymPostAssociation).delete()
-        session.commit()
-        print(f'Sucessfully deleted all data from DB.')
-
-
-    def dump(self, delete_data = False):
-        """
-        Dumps all stored data for every synonym to the caller. 
-        Also returns a function that, when called, empties the 
-        local data store. 
-        """
-        synonyms = session.query(Synonym).options(joinedload('posts')).all()
-        if delete_data: 
-            self._clear_data_store()
-        return synonyms
-
     def commit_review(self, synonym, review): 
         """
         Commits a synonym <--> post relation to the database. 
         """
-        existing_synonyms = [synonym.name for synonym in session.query(Synonym)]
-        synonym_exists = synonym in existing_synonyms
 
         # Post attributes  
         date = review['date'].split('T')[0]
         date = datetime.strptime(date, "%Y-%m-%d")
         contents = f"{review['title']}. {review['body']}"
 
-        oPost = Post(date = date, contents = contents)
-
-        # Check if synonym exists 
-        if synonym_exists: 
-            oSyn = session.query(Synonym).filter_by(name = synonym).first()
-            oSyn.posts.append(oPost)
-
-        else: 
-            oSyn = Synonym(name = synonym)
-            oSyn.posts.append(oPost)
-            session.add(oSyn)
-            print(f'Adding {synonym} to database.')
-
-        session.commit()
+        self.db.commit(synonym = synonym, post = contents, date = date)
 
         
 
