@@ -45,10 +45,10 @@ class TrustPilotCrawler(PostRetriever):
         if synonyms is not None:
             self.add_synonyms(synonyms)
 
-        crawler_thread = Thread(target = self._threaded_crawl, args = [self.synonym_queue, self.crawled_data], daemon = True)
+        crawler_thread = Thread(target = self._threaded_crawl, args = [self.synonym_queue, self.crawled_data, verbose], daemon = True)
         crawler_thread.start()
 
-    def _threaded_crawl(self, queue, data_store):
+    def _threaded_crawl(self, queue, data_store, verbose = False):
         while True:
             try:
                 # Get the next synonym dict in the queue 
