@@ -14,7 +14,7 @@ from sqlalchemy.orm import joinedload
 from dbhandler import DBHandler
 
 
-class TrustPilotCrawler(PostRetriever):
+class TrustPilotCrawler():
     """ 
     Simple single-host crawler that extract company reviews from Trustpilot. 
     Synonyms can be added dynamically. Performs a Trustpilot search for each synonym 
@@ -25,7 +25,6 @@ class TrustPilotCrawler(PostRetriever):
     """
 
     def __init__(self): 
-        super.__init__()
         self.db = DBHandler()
         self.synonyms = []
 
