@@ -41,11 +41,11 @@ class TrustPilotCrawler(PostRetriever):
         self.synonyms = set() 
         self.seen_reviews = {}
 
-    def begin_crawl(self, synonyms=None):
+    def begin_crawl(self, synonyms = None, verbose = False):
         if synonyms is not None:
             self.add_synonyms(synonyms)
 
-        crawler_thread = Thread(target=self._threaded_crawl, args=[self.synonym_queue, self.crawled_data], daemon=True)
+        crawler_thread = Thread(target = self._threaded_crawl, args = [self.synonym_queue, self.crawled_data], daemon = True)
         crawler_thread.start()
 
     def _threaded_crawl(self, queue, data_store):
@@ -65,10 +65,11 @@ class TrustPilotCrawler(PostRetriever):
 
                 url = url_queue.get()
                 # Get reviews from this URL
-                print(f'Processing: {url}')
-                print(f'Currently looking at synonyms: {self.synonyms}')
-                print(f'Number of entries in data store: {len(data_store.values())}')
-                print('-------------------------------------------------------------------------------------')
+                if verbose: 
+                    print(f'Processing: {url}')
+                    print(f'Currently looking at synonyms: {self.synonyms}')
+                    print(f'Number of entries in data store: {len(data_store.values())}')
+                    print('-------------------------------------------------------------------------------------')
 
                 reviews, next_page = self._get_reviews_from_url(review_page_url=url)
                 # Store the extracted reviews 
