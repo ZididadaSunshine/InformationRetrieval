@@ -1,4 +1,4 @@
-class PostRetriever(): 
+class PostRetriever:
     """
     Interface class to be implemented by crawlers, scrapers, and other information
     retrieval classes.

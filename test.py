@@ -26,4 +26,4 @@ cr.add_synonym('samsung')
 # Let the thread run until we exit the main thread. 
 # The thread is Matt Daemon so it will terminate when this thread terminates. 
 while True: 
-    pass 
+    pass
