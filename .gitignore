@@ -2,3 +2,5 @@
 \.idea/
 
 secrets\.py
+
+*.pyc
