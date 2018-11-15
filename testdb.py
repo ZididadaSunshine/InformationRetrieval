@@ -1,5 +1,5 @@
 import database
-from database import Synonym, Post, SynonymPostAssociation, session
+from database import Synonym, Post, SynonymPostAssociation, session, TrustpilotPost
 from datetime import datetime
 
 #entity = database.Synonym(name='test')
@@ -18,9 +18,11 @@ from datetime import datetime
 syns = session.query(Synonym)
 posts = session.query(Post)
 rels = session.query(SynonymPostAssociation)
+tppost = session.query(TrustpilotPost)
 
 session.commit()
 
 print(syns.count())
 print(posts.count())
 print(rels.count())
+print(tppost.count())

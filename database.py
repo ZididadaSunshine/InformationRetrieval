@@ -26,15 +26,16 @@ class Synonym(Base):
 
 class Post(Base):
     __tablename__ = 'post'
-    id = Column(String(16), primary_key=True)
+    id = Column(String(32), primary_key=True)
     contents = Column(Text)
     synonyms = relationship('Synonym', secondary=SynonymPostAssociation.__tablename__, back_populates='posts')
     date = Column(DateTime, nullable=False)
+    author_id = Column(String(32), nullable = False)
 
 
 class RedditPost(Post):
     __tablename__ = 'redditpost'
-    id = Column(String(16), ForeignKey('post.id'), primary_key=True)
+    id = Column(String(32), ForeignKey('post.id'), primary_key=True)
     subreddit = Column(String(64), nullable=False)
 
     def __repr__(self):
@@ -76,7 +77,7 @@ if __name__ == "__main__":
     session.refresh(synonym)
 
     sample = RedditPost(id='test', date=datetime.datetime.utcnow(), contents='hej', subreddit='2007scape',
-                        synonyms=[synonym])
+                        synonyms=[synonym], author_id = 'mikkelJarlund')
     session.add(sample)
 
     session.commit()

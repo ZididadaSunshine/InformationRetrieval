@@ -1,7 +1,7 @@
 import hashlib
 
 import database
-from database import Synonym, Post, SynonymPostAssociation, session
+from database import Synonym, Post, SynonymPostAssociation, session, TrustpilotPost
 from sqlalchemy.orm import joinedload
 
 class DBHandler(): 
@@ -9,22 +9,29 @@ class DBHandler():
     def __init__(self): 
         pass 
 
-    def commit_trustpilot(self, synonym, post, date, identifier, verbose = False):
+    def commit_trustpilot(self, synonym, contents, date, identifier, num_user_ratings, user, verbose = False):
         """
         Input: 
-                Synonym : string
-                Post    : string (text body)
-                date    : Python datetime object
+                synonym          : string
+                contents         : string
+                date             : UTC datetime object
+                identifier       : string
+                num_user_ratings : integer
+                verbose          : boolean
 
         Commits a synonym <-> post relation to the database. 
         """ 
 
+        if self.post_exists(identifier):
+            return False
+
         existing_synonyms = [synonym.name for synonym in session.query(Synonym)]
         synonym_exists = synonym in existing_synonyms
 
-        # Hash the identifier
+        id = self.hash_identifier(identifier)
+        hashed_user = self.hash_identifier(user)
 
-        oPost = TrustpilotPost(date = date, contents = post)
+        oPost = TrustpilotPost(date = date, contents = contents, id = id, user_ratings = num_user_ratings, author_id = hashed_user)
 
         # Check if synonym exists 
         if synonym_exists: 
@@ -41,6 +48,7 @@ class DBHandler():
                 print(f'Adding {synonym} to database.')
 
         session.commit()
+        return True
 
     def clear(self, verbose = False):
         """

@@ -74,9 +74,9 @@ class TrustPilotCrawler():
                 already_seen = False
                 for review in reviews:
                     # Only save the review if we have not seen it
-                    already_seen = self.ensure_data_store(synonym, review)
-                    if already_seen:
-                        # Break out of the for loop.
+                    successful_commit = self.ensure_data_store(synonym, review)
+                    if not successful_commit:
+                        # Break out of the for loop, we already stored to object.
                         break
 
                 # Requeue the synonym dict 
@@ -222,35 +222,14 @@ class TrustPilotCrawler():
 
     def ensure_data_store(self, synonym, review):
         """
-        Returns true if the review has been seen, otherwise false.
+        Returns false if the review has been seen, otherwise true.
         Takes a review an verifies whether or not this review has been seen before. 
         This is determined by looking at the date and the user. If it has been seen, 
         the function does nothing. Otherwise, an entry is made to the seen_reviews 
         dictionary with this user and date.
         """
-        if synonym not in self.crawled_data.keys(): 
-            self.crawled_data[synonym] = []
 
-        user = review['user']
-        date = review['date'].split('T')[0]
-        if synonym not in self.seen_reviews.keys():
-            # We have not even seen the synonym before, so set up its dict structure.
-            self.seen_reviews[synonym] = {date : [user]}
-            self.commit_review(synonym, review)
-            return False
-        elif date not in self.seen_reviews[synonym]:
-            # This date has not been created, so we have not seen it either. 
-            self.seen_reviews[synonym][date] = [user]
-            self.commit_review(synonym, review)
-            return False
-        elif user not in self.seen_reviews[synonym][date]:
-            # We have not seen this user post today, so add the review. 
-            self.commit_review(synonym, review)
-            return False
-
-        # Otherwise, simply return that we have already seen it
-        print(f'Found a duplicate! {user} at {date}')
-        return True
+        return self.commit_review(synonym, review)
 
     def commit_review(self, synonym, review): 
         """
@@ -258,14 +237,17 @@ class TrustPilotCrawler():
         """
 
         # Post attributes  
-        date = review['date'].split('T')[0]
-        date = datetime.strptime(date, "%Y-%m-%d")
+        date_time = review['date'].split('T')
+        date = date_time[0].split('-')
+        time = date_time[1].split(':')
+        the_datetime = datetime(year = int(date[0]), month = int(date[1]), day = int(date[2]), 
+                                hour = int(time[0]), minute = int(time[1]), second = int(time[2].split('.')[0]))
         contents = f"{review['title']}. {review['body']}"
         user = review['user']
         review_count = review['review_count']
         identifier = f'trustpilot-{user}-{date}-{review_count}'
 
-        self.db.commit_trustpilot(synonym = synonym, post = contents, date = date)
+        return self.db.commit_trustpilot(synonym = synonym, contents = contents, date = the_datetime, identifier = identifier, num_user_ratings = review_count, user = user)
 
         
 
