@@ -1,5 +1,5 @@
 import database 
-from database import Synonym, Post, SynonymPostAssociation, session
+from database import Synonym, Post, SynonymPostAssociation, session, TrustpilotPost
 from sqlalchemy.orm import joinedload
 
 
@@ -8,7 +8,7 @@ class DBHandler():
     def __init__(self): 
         pass 
 
-    def commit(self, synonym, post, date, verbose = False):
+    def commit_trustpilot(self, synonym, post, date, identifier, verbose = False):
         """
         Input: 
                 Synonym : string
@@ -17,10 +17,13 @@ class DBHandler():
 
         Commits a synonym <-> post relation to the database. 
         """ 
+
         existing_synonyms = [synonym.name for synonym in session.query(Synonym)]
         synonym_exists = synonym in existing_synonyms
 
-        oPost = Post(date = date, contents = post)
+        # Hash the identifier
+
+        oPost = TrustpilotPost(date = date, contents = post)
 
         # Check if synonym exists 
         if synonym_exists: 

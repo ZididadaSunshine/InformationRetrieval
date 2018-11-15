@@ -190,8 +190,12 @@ class TrustPilotCrawler():
 
         soup = self._get_souped_page(review_page_url)
         cards = soup.findAll('section', {'class', 'review-card__content-section'})
-        users = [card.find('h3', {'class', 'consumer-info__details__name'}).get_text() for card in cards]
         reviews = soup.findAll('section', {'class': 'content-section__review-info'})
+        users_review_counts = zip(
+                    [card.find('h3', {'class', 'consumer-info__details__name'}).get_text() for card in cards], 
+                    [card.find('span', {'class', 'consumer-info__details__review-count'}).get_text().strip().split(' ')[0] for card in cards]
+                    )
+
 
         next_page = self._get_next_page(soup)
 
@@ -200,9 +204,10 @@ class TrustPilotCrawler():
                        'title': review.find('h2', {'class', 'review-info__body__title'}).get_text().strip(),
                        'body': review.find('p', {'class', 'review-info__body__text'}).get_text().strip(),
                        'date': self._get_date(review),
-                       'user': user.strip()
+                       'user': user.strip(),
+                       'review_count' : review_count
                    }
-                   for (review, user) in zip(reviews, users)], next_page
+                   for (review, (user, review_count)) in zip(reviews, users_review_counts)], next_page
 
     def _get_next_page(self, souped_review_page):
         next_page = souped_review_page.find('a', {'class', 'pagination-page next-page'}, href=True)
@@ -256,8 +261,11 @@ class TrustPilotCrawler():
         date = review['date'].split('T')[0]
         date = datetime.strptime(date, "%Y-%m-%d")
         contents = f"{review['title']}. {review['body']}"
+        user = review['user']
+        review_count = review['review_count']
+        identifier = f'trustpilot-{user}-{date}-{review_count}'
 
-        self.db.commit(synonym = synonym, post = contents, date = date)
+        self.db.commit_trustpilot(synonym = synonym, post = contents, date = date)
 
         
 
