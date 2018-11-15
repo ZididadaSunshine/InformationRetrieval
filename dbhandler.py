@@ -30,10 +30,8 @@ class DBHandler:
             new_post = TrustpilotPost(date=date, contents=contents, id=post_id, user_ratings=num_user_ratings,
                                       author_id=hashed_user)
 
-            # Create synonym if it does not exist
+            # Fetch synonym id from DB
             synonym_inst = self.get_synonym(session, synonym)
-            if not synonym_inst:
-                synonym_inst = Synonym(name=synonym)
             new_post.synonyms = [synonym_inst]
 
             session.add(new_post)
@@ -52,7 +50,10 @@ class DBHandler:
             session.commit()
             if verbose:
                 print(
-                    f'Successfully deleted all data from database: {numSym} synonyms, {numPosts} posts, and {numRels} synonym<->post relations.')
+                    f'''Successfully deleted all data from database: 
+                        {numSym} synonyms, 
+                        {numPosts} posts, 
+                        and {numRels} synonym<->post relations.''')
 
     def dump(self, clear_data_after=False, verbose=False):
         """

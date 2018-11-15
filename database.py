@@ -89,8 +89,8 @@ def session_scope():
 
 
 if __name__ == "__main__":
-    #Base.metadata.drop_all(engine)
-    #Base.metadata.create_all(engine)
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
 
     with session_scope() as session:
         synonym = Synonym(name='test')

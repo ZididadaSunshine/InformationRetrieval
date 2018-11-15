@@ -23,5 +23,5 @@ if __name__ == "__main__":
     # TODO: Bind the following to an "end_crawl" endpoint.
     # Let the thread run until we exit the main thread.
     # The thread is Matt Daemon so it will terminate when this thread terminates.
-    # while True:
-    #     pass
+    while True:
+        pass

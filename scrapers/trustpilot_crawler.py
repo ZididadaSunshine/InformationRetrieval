@@ -21,7 +21,7 @@ class TrustPilotCrawler:
     successfully, they are removed from the database. 
     """
 
-    def __init__(self): 
+    def __init__(self):
         self.db = DBHandler()
         self.synonyms = []
 
@@ -32,19 +32,19 @@ class TrustPilotCrawler:
         # from the URLs webpage are enqueued in the synonym's URL queue. 
         self.synonym_queue = Queue()
 
-        self.host_timer = time.time() 
+        self.host_timer = time.time()
         self.crawled_data = {}
-        self.synonyms = set() 
+        self.synonyms = set()
         self.seen_reviews = {}
 
-    def begin_crawl(self, synonyms = None, verbose = False):
+    def begin_crawl(self, synonyms=None, verbose=False):
         if synonyms is not None:
             self.add_synonyms(synonyms)
 
-        crawler_thread = Thread(target = self._threaded_crawl, args = [self.synonym_queue, self.crawled_data, verbose], daemon = True)
+        crawler_thread = Thread(target=self._threaded_crawl, args=[self.synonym_queue, verbose], daemon=True)
         crawler_thread.start()
 
-    def _threaded_crawl(self, queue, data_store, verbose = False):
+    def _threaded_crawl(self, queue, verbose=False):
         while True:
             try:
                 # Get the next synonym dict in the queue 
@@ -61,10 +61,9 @@ class TrustPilotCrawler:
 
                 url = url_queue.get()
                 # Get reviews from this URL
-                if verbose: 
+                if verbose:
                     print(f'Processing: {url}')
                     print(f'Currently looking at synonyms: {self.synonyms}')
-                    print(f'Number of entries in data store: {len(data_store.values())}')
                     print('-------------------------------------------------------------------------------------')
 
                 reviews, next_page = self._get_reviews_from_url(review_page_url=url)
@@ -190,10 +189,10 @@ class TrustPilotCrawler:
         cards = soup.findAll('section', {'class', 'review-card__content-section'})
         reviews = soup.findAll('section', {'class': 'content-section__review-info'})
         users_review_counts = zip(
-                    [card.find('h3', {'class', 'consumer-info__details__name'}).get_text() for card in cards], 
-                    [card.find('span', {'class', 'consumer-info__details__review-count'}).get_text().strip().split(' ')[0] for card in cards]
-                    )
-
+            [card.find('h3', {'class', 'consumer-info__details__name'}).get_text() for card in cards],
+            [card.find('span', {'class', 'consumer-info__details__review-count'}).get_text()
+                 .strip().split(' ')[0] for card in cards]
+        )
 
         next_page = self._get_next_page(soup)
 
@@ -203,7 +202,7 @@ class TrustPilotCrawler:
                        'body': review.find('p', {'class', 'review-info__body__text'}).get_text().strip(),
                        'date': self._get_date(review),
                        'user': user.strip(),
-                       'review_count' : review_count
+                       'review_count': review_count
                    }
                    for (review, (user, review_count)) in zip(reviews, users_review_counts)], next_page
 
@@ -229,7 +228,7 @@ class TrustPilotCrawler:
 
         return self.commit_review(synonym, review)
 
-    def commit_review(self, synonym, review): 
+    def commit_review(self, synonym, review):
         """
         Commits a synonym <--> post relation to the database. 
         """
@@ -238,31 +237,12 @@ class TrustPilotCrawler:
         date_time = review['date'].split('T')
         date = date_time[0].split('-')
         time = date_time[1].split(':')
-        the_datetime = datetime(year = int(date[0]), month = int(date[1]), day = int(date[2]), 
-                                hour = int(time[0]), minute = int(time[1]), second = int(time[2].split('.')[0]))
+        the_datetime = datetime(year=int(date[0]), month=int(date[1]), day=int(date[2]),
+                                hour=int(time[0]), minute=int(time[1]), second=int(time[2].split('.')[0]))
         contents = f"{review['title']}. {review['body']}"
         user = review['user']
         review_count = review['review_count']
         identifier = f'trustpilot-{user}-{date}-{review_count}'
 
-        return self.db.commit_trustpilot(synonym = synonym, contents = contents, date = the_datetime, identifier = identifier, num_user_ratings = review_count, user = user)
-
-        
-
-
-
-
-
-
-        
-
-
-
-
-
-        
-
-
-    
-
-
+        return self.db.commit_trustpilot(synonym=synonym, contents=contents, date=the_datetime,
+                                         identifier=identifier, num_user_ratings=review_count, user=user)
