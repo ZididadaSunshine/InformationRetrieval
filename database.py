@@ -37,6 +37,9 @@ class RedditPost(Post):
     id = Column(String(16), ForeignKey('post.id'), primary_key=True)
     subreddit = Column(String(64), nullable=False)
 
+    def __repr__(self):
+        return f'<RedditPost {self.id}>'
+
     __mapper_args__ = {
         'polymorphic_identity': 'redditpost',
     }
@@ -46,6 +49,9 @@ class TrustpilotPost(Post):
     __tablename__ = 'trustpilotpost'
     id = Column(String(16), ForeignKey('post.id'), primary_key=True)
     user_ratings = Column(Integer, nullable=False)
+
+    def __repr__(self):
+        return f'<TrustpilotPost {self.id}>'
 
     __mapper_args__ = {
         'polymorphic_identity': 'trustpilotpost',

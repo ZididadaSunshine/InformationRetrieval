@@ -1,7 +1,8 @@
-import database 
+import hashlib
+
+import database
 from database import Synonym, Post, SynonymPostAssociation, session
 from sqlalchemy.orm import joinedload
-
 
 class DBHandler(): 
 
@@ -58,5 +59,13 @@ class DBHandler():
         if clear_data_after: 
             self.clear(verbose = verbose)
         return synonyms
+
+    def hash_identifier(self, identifier):
+        return hashlib.md5(identifier.encode('utf8')).digest()
+
+    def post_exists(self, identifier):
+        hashed = self.hash_identifier(identifier)
+
+        return session.query(Post).filter_by(id=hashed).count() > 0
 
 
