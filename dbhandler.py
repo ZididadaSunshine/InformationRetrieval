@@ -9,10 +9,11 @@ class DBHandler:
     def __init__(self):
         pass
 
-    def get_new_reviews(self, synonym):
+    def get_new_reviews_no_sentiment(self, synonym):
         with session_scope() as session:
             # Retrieve all posts relating to this synonym
-            return session.query(Post).from_statement(
+            # TODO: Make sure that the found reviews have not had their sentiment analysed yet.
+            reviews =  session.query(Post).from_statement(
                 text(f'''
                     WITH posts AS (
                         SELECT * 
@@ -25,6 +26,8 @@ class DBHandler:
                 ''')
             ).all()
 
+            session.expunge_all()  # Untether results from session
+            return reviews
 
     def commit_trustpilot(self, synonym, contents, date, identifier, num_user_ratings, user, verbose=False):
         """

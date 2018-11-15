@@ -1,6 +1,9 @@
 from queue import Queue
 from threading import Thread
 import os
+from datetime import datetime
+import time
+from time import sleep
 
 from dbhandler import DBHandler
 
@@ -49,6 +52,15 @@ class Scheduler:
         # to both the synonym and their sentiment.
         pass
 
+    def __threaded_schedule__(self):
+        while True:
+            next_synonym = self.synonym_queue.get()
+            reviews = self.fetch_new_reviews(synonym=next_synonym)
+            # TODO: Analyse sentiment for all reviews and store result in local database.
+
+            self.synonym_queue.put(next_synonym)  # Requeue synonym
+        pass
+
     def begin_kwe_schedule(self):
         # TODO:
         # Once every hour, fetch all data from the local database
@@ -57,18 +69,32 @@ class Scheduler:
         # Store the results in the main database.
         pass
 
+    def __threaded_kwe_schedule__(self, wait_for_seconds=3600):
+        previous_time = time.mktime(datetime.now().timetuple())
+        while True:
+            # Wait for scheduled analysis
+            next_time = previous_time + wait_for_seconds
+            if next_time > previous_time:
+                sleep(previous_time - next_time)
+
+            reviews = self.local_db.fetch
+
+
+
+        pass
+
     def fetch_all_synonyms(self):
         # TODO: Fetch all synonyms from the database.
         pass
 
-    def fetch_new_reviews(self, synonym):
+    def fetch_new_reviews_no_sentiment(self, synonym):
         """
         Returns all newly crawled posts from the crawler and scraper that
         relate to this synonym.
         :param synonym : string
         """
         # TODO: From the crawler and scraper, fetch the new reviews gathered for this synonym.
-        self.local_db.get_new_reviews(synonym)
+        return self.local_db.get_new_reviews_no_sentiment(synonym)
         pass
 
     def commit_keywords_with_sentiment(self, keywords):
@@ -96,4 +122,6 @@ class Scheduler:
         pass
 
 s = Scheduler()
-s.fetch_new_reviews('google')
+results = s.fetch_new_reviews(synonym='google')
+for result in results:
+    print(result.contents)
