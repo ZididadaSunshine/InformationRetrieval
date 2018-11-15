@@ -1,12 +1,30 @@
 import hashlib
 
 from database import Synonym, Post, SynonymPostAssociation, TrustpilotPost, session_scope, RedditPost
+from sqlalchemy.sql import text
 from sqlalchemy.orm import joinedload
 
 
 class DBHandler:
     def __init__(self):
         pass
+
+    def get_new_reviews(self, synonym):
+        with session_scope() as session:
+            # Retrieve all posts relating to this synonym
+            return session.query(Post).from_statement(
+                text(f'''
+                    WITH posts AS (
+                        SELECT * 
+                        FROM post p 
+                        JOIN synonym_post_association a ON p.id = a.post_id 
+                    ) 
+                    SELECT * 
+                    FROM synonym s
+                    JOIN posts ps WHERE s.id = ps.synonym_id AND s.name = "{synonym}"
+                ''')
+            ).all()
+
 
     def commit_trustpilot(self, synonym, contents, date, identifier, num_user_ratings, user, verbose=False):
         """
