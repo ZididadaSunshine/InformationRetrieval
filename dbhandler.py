@@ -61,7 +61,7 @@ class DBHandler():
         return synonyms
 
     def hash_identifier(self, identifier):
-        return hashlib.md5(identifier.encode('utf8')).digest()
+        return hashlib.md5(identifier.encode('utf8')).hexdigest()
 
     def post_exists(self, identifier):
         hashed = self.hash_identifier(identifier)
