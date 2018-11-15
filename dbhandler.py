@@ -1,6 +1,6 @@
 import hashlib
 
-from database import Synonym, Post, SynonymPostAssociation, TrustpilotPost, session_scope
+from database import Synonym, Post, SynonymPostAssociation, TrustpilotPost, session_scope, RedditPost
 from sqlalchemy.orm import joinedload
 
 
@@ -76,3 +76,23 @@ class DBHandler:
 
     def get_synonym(self, session, synonym):
         return session.query(Synonym).filter_by(name=synonym).first()
+
+    def commit_reddit(self, unique_id, synonyms, text, author, subreddit, date):
+        with session_scope() as session:
+            if self.post_exists(session, unique_id):
+                return False
+
+            synonyms = [self.get_synonym(session, synonym) for synonym in synonyms]
+            if None in synonyms:
+                raise RuntimeError("Synonyms missing from the database.")
+
+            hashed_author = self.hash_identifier(author)
+            hashed_id = self.hash_identifier(unique_id)
+
+            reddit_post = RedditPost(author_id=hashed_author, subreddit=subreddit, synonyms=synonyms, date=date,
+                                     contents=text, id=hashed_id)
+
+            session.add(reddit_post)
+            session.commit()
+
+            return True
