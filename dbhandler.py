@@ -84,6 +84,14 @@ class DBHandler:
                 self.clear(verbose=verbose)
             return synonyms
 
+    def set_post_processed(self, session, post, commit=True):
+        """ Mark a post as processed, removing its contents at the same time """
+        post.contents = None
+        post.processed = True
+
+        if commit:
+            session.commit()
+
     def hash_identifier(self, identifier):
         return hashlib.md5(identifier.encode('utf8')).hexdigest()
 
@@ -94,6 +102,16 @@ class DBHandler:
 
     def get_synonym(self, session, synonym):
         return session.query(Synonym).filter_by(name=synonym).first()
+
+    def commit_synonyms(self, synonyms):
+        with session_scope() as session:
+            for synonym in synonyms:
+                if self.get_synonym(session, synonym):
+                    continue
+
+                session.add(Synonym(name=synonym))
+
+            session.commit()
 
     def commit_reddit(self, unique_id, synonyms, text, author, subreddit, date):
         with session_scope() as session:

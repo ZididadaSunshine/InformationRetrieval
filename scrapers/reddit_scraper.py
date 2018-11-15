@@ -26,6 +26,7 @@ class RedditScraper:
 
     def use_synonyms(self, synonyms):
         self.synonyms = synonyms
+        self.db_handler.commit_synonyms(synonyms)
 
     def _normalize(self, token):
         """ Normalize a word by converting it to lowercase and removing puncutation """
