@@ -1,9 +1,8 @@
 import praw
-from post_retriever import PostRetriever
 from secrets import Secrets
 
 
-class RedditRetriever(PostRetriever):
+class RedditRetriever:
     def __init__(self):
         super().__init__()
 
