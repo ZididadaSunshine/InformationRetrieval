@@ -1,6 +1,6 @@
 import datetime
 from contextlib import contextmanager
-from sqlalchemy import Column, ForeignKey, Integer, Text, String, create_engine, DateTime
+from sqlalchemy import Column, ForeignKey, Integer, Text, String, create_engine, DateTime, Boolean
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship, sessionmaker
 
@@ -27,11 +27,12 @@ class Post(Base):
     __tablename__ = 'post'
 
     id = Column(String(32), primary_key=True)
-    contents = Column(Text)
+    contents = Column(Text, nullable=True)
     synonyms = relationship('Synonym', secondary=SynonymPostAssociation.__tablename__, back_populates='posts')
     date = Column(DateTime, nullable=False)
     author_id = Column(String(32), nullable=False)
     source = Column(String(50))
+    processed = Column(Boolean, default=False)
 
     __mapper_args__ = {
         'polymorphic_identity': 'post',
@@ -89,26 +90,8 @@ def session_scope():
 
 
 if __name__ == "__main__":
-    #Base.metadata.drop_all(engine)
-    #Base.metadata.create_all(engine)
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
 
-    with session_scope() as session:
-        synonym = Synonym(name='test')
-        session.add(synonym)
-        session.flush()
-        session.refresh(synonym)
+    print("Database re-created")
 
-        sample = RedditPost(id='test', date=datetime.datetime.utcnow(), contents='hej', subreddit='2007scape',
-                            synonyms=[synonym], author_id='mikkelJarlund')
-        session.add(sample)
-
-        sample2 = TrustpilotPost(id='test2', date=datetime.datetime.utcnow(), author_id='mikk', synonyms=[synonym],
-                                 user_ratings=2)
-        session.add(sample2)
-
-        session.commit()
-
-        post = session.query(Post).filter_by(id='test').first()
-        print(post)
-
-        print(session.query(Post).filter_by(id='test').count())
