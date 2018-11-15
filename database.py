@@ -1,9 +1,8 @@
 import datetime
-
+from contextlib import contextmanager
 from sqlalchemy import Column, ForeignKey, Integer, Text, String, create_engine, DateTime
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship, sessionmaker
-from sqlalchemy.sql import exists
 
 Base = declarative_base()
 
@@ -26,15 +25,23 @@ class Synonym(Base):
 
 class Post(Base):
     __tablename__ = 'post'
+
     id = Column(String(32), primary_key=True)
     contents = Column(Text)
     synonyms = relationship('Synonym', secondary=SynonymPostAssociation.__tablename__, back_populates='posts')
     date = Column(DateTime, nullable=False)
-    author_id = Column(String(32), nullable = False)
+    author_id = Column(String(32), nullable=False)
+    source = Column(String(50))
+
+    __mapper_args__ = {
+        'polymorphic_identity': 'post',
+        'polymorphic_on': source
+    }
 
 
 class RedditPost(Post):
     __tablename__ = 'redditpost'
+
     id = Column(String(32), ForeignKey('post.id'), primary_key=True)
     subreddit = Column(String(64), nullable=False)
 
@@ -48,7 +55,8 @@ class RedditPost(Post):
 
 class TrustpilotPost(Post):
     __tablename__ = 'trustpilotpost'
-    id = Column(String(16), ForeignKey('post.id'), primary_key=True)
+
+    id = Column(String(32), ForeignKey('post.id'), primary_key=True)
     user_ratings = Column(Integer, nullable=False)
 
     def __repr__(self):
@@ -63,31 +71,44 @@ engine = create_engine('sqlite:///posts.db')
 
 Base.metadata.bind = engine
 
-DBSession = sessionmaker()
-DBSession.bind = engine
-session = DBSession()
+Session = sessionmaker(bind=engine)
+
+
+@contextmanager
+def session_scope():
+    """Provide a transactional scope around a series of operations."""
+    session = Session()
+    try:
+        yield session
+        session.commit()
+    except:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
 
 if __name__ == "__main__":
-    Base.metadata.drop_all(engine)
-    Base.metadata.create_all(engine)
+    #Base.metadata.drop_all(engine)
+    #Base.metadata.create_all(engine)
 
-    synonym = Synonym(name='test')
-    session.add(synonym)
-    session.flush()
-    session.refresh(synonym)
+    with session_scope() as session:
+        synonym = Synonym(name='test')
+        session.add(synonym)
+        session.flush()
+        session.refresh(synonym)
 
-    sample = RedditPost(id='test', date=datetime.datetime.utcnow(), contents='hej', subreddit='2007scape',
-                        synonyms=[synonym], author_id = 'mikkelJarlund')
-    session.add(sample)
+        sample = RedditPost(id='test', date=datetime.datetime.utcnow(), contents='hej', subreddit='2007scape',
+                            synonyms=[synonym], author_id='mikkelJarlund')
+        session.add(sample)
 
-    session.commit()
+        sample2 = TrustpilotPost(id='test2', date=datetime.datetime.utcnow(), author_id='mikk', synonyms=[synonym],
+                                 user_ratings=2)
+        session.add(sample2)
 
-    post = session.query(Post).filter_by(id='test').first()
-    print(post)
+        session.commit()
 
-    print(session.query(Post).filter_by(id='test').count())
+        post = session.query(Post).filter_by(id='test').first()
+        print(post)
 
-
-
-
-
+        print(session.query(Post).filter_by(id='test').count())

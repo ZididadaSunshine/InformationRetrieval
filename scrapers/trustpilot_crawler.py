@@ -1,19 +1,17 @@
-from urllib.request import urlopen, urlparse
-from bs4 import BeautifulSoup as bs
-from queue import Queue
 import time
-from time import sleep
-from threading import Thread
 import traceback
 from datetime import datetime
-# Database
-import database
-from database import session, Synonym, Post, SynonymPostAssociation
-from sqlalchemy.orm import joinedload
+from queue import Queue
+from threading import Thread
+from time import sleep
+from urllib.request import urlopen
+
+from bs4 import BeautifulSoup as bs
+
 from dbhandler import DBHandler
 
 
-class TrustPilotCrawler():
+class TrustPilotCrawler:
     """ 
     Simple single-host crawler that extract company reviews from Trustpilot. 
     Synonyms can be added dynamically. Performs a Trustpilot search for each synonym 
