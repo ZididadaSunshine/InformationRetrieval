@@ -7,7 +7,7 @@ result = cr.db.dump(clear_data_after = True)
 
 # TODO: Bind the following to a "begin_crawl" endpoint.
 # To begin the crawler (should really only be done once), enter seed URLs like this:
-cr.begin_crawl(['apple', 'google', 'dsb'])
+#cr.begin_crawl(['apple', 'google', 'dsb'])
 # ... or by using the add_synonym method before calling begin_crawl.
 
 

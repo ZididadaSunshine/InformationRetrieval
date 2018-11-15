@@ -22,10 +22,20 @@ class Synonym(Base):
 
 class Post(Base): 
     __tablename__ = 'post'
-    id = Column(Integer, primary_key = True, autoincrement = True)
+    id       = Column(String(16), primary_key = True)
     contents = Column(Text)
     synonyms = relationship('Synonym', secondary = SynonymPostAssociation.__tablename__, back_populates = 'posts')
     date     = Column(Date)
+
+class RedditPost(Post):
+    __tablename__ = 'redditpost'
+    subreddit     = Column(String(16), primary_key = True)
+
+class TrustpilotPost(Post): 
+    __tablename__ = 'trustpilotpost'
+    synonym       = Column(String(16), primary_key = True) # Redundancy, not critical
+
+
 
 engine = create_engine('sqlite:///posts.db')
 

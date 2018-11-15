@@ -1,4 +1,3 @@
-from post_retriever import PostRetriever
 from urllib.request import urlopen, urlparse
 from bs4 import BeautifulSoup as bs
 from queue import Queue
