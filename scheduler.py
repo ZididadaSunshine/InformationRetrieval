@@ -6,6 +6,7 @@ import time
 from time import sleep
 
 from dbhandler import DBHandler
+from scrapers.trustpilot_crawler import TrustPilotCrawler
 
 
 class Scheduler:
@@ -26,7 +27,7 @@ class Scheduler:
         self.all_synonyms = []
 
         # TODO: Instantiate fields for crawler and scraper
-        self.trustpilot = None
+        self.trustpilot = TrustPilotCrawler()
         self.reddit = None
 
         # TODO: Instantiate fields for KWE and SE
@@ -126,7 +127,26 @@ class Scheduler:
         """
         pass
 
+    def add_synonyms(self, synonyms):
+        for synonym in synonyms:
+            self.add_synonym(synonym)
+
+    def add_synonym(self, synonym):
+        self.local_db.commit_synonyms([synonym])
+        self.synonym_queue.put(synonym)
+        self.all_synonyms.append(synonym)
+        self.trustpilot.add_synonym(synonym)
+        # TODO: Add to Reddit scraper as well
+
+
 s = Scheduler()
-results = s.fetch_new_reviews(synonym='google')
+# s.add_synonyms(['dsb', 'apple', 'google'])
+# s.trustpilot.begin_crawl()
+
+# sleep(10)
+
+results = s.fetch_new_reviews(synonym='google', with_sentiment=False)
+print(len(results))
 for result in results:
     print(result.contents)
+
