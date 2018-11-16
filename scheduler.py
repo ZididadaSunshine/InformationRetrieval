@@ -54,7 +54,7 @@ class Scheduler:
         # to both the synonym and their sentiment.
         pass
 
-    def __threaded_schedule__(self):
+    def _threaded_schedule(self):
         while True:
             next_synonym = self.synonym_queue.get()
             reviews = self.fetch_new_reviews(synonym=next_synonym, with_sentiment=False)
@@ -71,7 +71,7 @@ class Scheduler:
         # Store the results in the main database.
         pass
 
-    def __threaded_kwe_schedule__(self, wait_for_seconds=3600):
+    def _threaded_kwe_schedule(self, wait_for_seconds=3600):
         previous_time = time.mktime(datetime.now().timetuple())
         while True:
             # Wait for scheduled analysis
