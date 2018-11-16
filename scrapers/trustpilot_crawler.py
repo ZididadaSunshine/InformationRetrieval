@@ -5,6 +5,7 @@ from queue import Queue
 from threading import Thread
 from time import sleep
 from urllib.request import urlopen
+from KeywordExtraction.preprocessing.text_preprocessing import get_processed_text
 
 from bs4 import BeautifulSoup as bs
 
