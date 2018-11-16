@@ -3,6 +3,7 @@ import re
 import string
 
 import praw
+from KeywordExtraction.preprocessing.text_preprocessing import get_processed_text
 from bs4 import BeautifulSoup
 from praw.models import Submission
 
@@ -54,6 +55,10 @@ class RedditScraper:
         # If no synonyms match the text, skip the entry
         if not matching_synonyms:
             return
+
+        # Process text with pre-processor module
+        # Stopwords are not removed yet, as they are needed for sentiment analysis
+        body_text = ' '.join(get_processed_text(body_text, no_stopwords=False))
 
         self.db_handler.commit_reddit(unique_id, matching_synonyms, body_text, author, subreddit, date)
 
