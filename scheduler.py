@@ -12,10 +12,10 @@ class Scheduler:
 
     def __init__(self):
         # TODO: Get DB location
-        #db_url  = os.environ['SENTI_CLOUD_DB_URL']
-        #db_user = os.environ['SENTI_CLOUD_USER']
-        #db_pw   = os.environ['SENTI_CLOUD_PW']
-        #db_name = os.environ['SENTI_CLOUD_DB_NAME']
+        # db_url  = os.environ['SENTI_CLOUD_DB_URL']
+        # db_user = os.environ['SENTI_CLOUD_USER']
+        # db_pw   = os.environ['SENTI_CLOUD_PW']
+        # db_name = os.environ['SENTI_CLOUD_DB_NAME']
 
         # TODO: Set up DB handlers
         self.main_db = None
@@ -23,6 +23,7 @@ class Scheduler:
 
         # TODO: Load synonyms from gateway DB and put them in the queue
         self.synonym_queue = Queue()
+        self.all_synonyms = []
 
         # TODO: Instantiate fields for crawler and scraper
         self.trustpilot = None
@@ -55,7 +56,7 @@ class Scheduler:
     def __threaded_schedule__(self):
         while True:
             next_synonym = self.synonym_queue.get()
-            reviews = self.fetch_new_reviews(synonym=next_synonym)
+            reviews = self.fetch_new_reviews(synonym=next_synonym, with_sentiment=False)
             # TODO: Analyse sentiment for all reviews and store result in local database.
 
             self.synonym_queue.put(next_synonym)  # Requeue synonym
@@ -77,9 +78,12 @@ class Scheduler:
             if next_time > previous_time:
                 sleep(previous_time - next_time)
 
-            reviews = self.local_db.fetch
-
-
+            # Make a list of all synonyms.
+            # For each of them, fetch all their new posts with sentiment.
+            # Get keywords and construct the return value: {synonym : {'good' : [], 'bad' : []}}
+            for synonym in self.all_synonyms:
+                # Sentiment analysis, store results in gateway DB
+                pass
 
         pass
 
@@ -87,14 +91,15 @@ class Scheduler:
         # TODO: Fetch all synonyms from the database.
         pass
 
-    def fetch_new_reviews_no_sentiment(self, synonym):
+    def fetch_new_reviews(self, synonym, with_sentiment=False):
         """
         Returns all newly crawled posts from the crawler and scraper that
         relate to this synonym.
         :param synonym : string
+        :param with_sentiment : boolean - if set to false, only returns rows where sentiment = NULL.
         """
         # TODO: From the crawler and scraper, fetch the new reviews gathered for this synonym.
-        return self.local_db.get_new_reviews_no_sentiment(synonym)
+        return self.local_db.get_new_reviews(synonym, with_sentiment=with_sentiment)
         pass
 
     def commit_keywords_with_sentiment(self, keywords):

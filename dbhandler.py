@@ -9,12 +9,11 @@ class DBHandler:
     def __init__(self):
         pass
 
-    def get_new_reviews_no_sentiment(self, synonym):
+    def get_new_reviews(self, synonym, with_sentiment = False):
         with session_scope() as session:
             # Retrieve all posts relating to this synonym
             # TODO: Make sure that the found reviews have not had their sentiment analysed yet.
-            reviews =  session.query(Post).from_statement(
-                text(f'''
+            query = f'''
                     WITH posts AS (
                         SELECT * 
                         FROM post p 
@@ -22,9 +21,14 @@ class DBHandler:
                     ) 
                     SELECT * 
                     FROM synonym s
-                    JOIN posts ps WHERE s.id = ps.synonym_id AND s.name = "{synonym}"
-                ''')
-            ).all()
+                    JOIN posts ps WHERE s.id = ps.synonym_id 
+                                    AND s.name = "{synonym}"
+                '''
+
+            if not with_sentiment:
+                query += 'AND ps.sentiment = NULL'
+
+            reviews =  session.query(Post).from_statement(text(query)).all()
 
             session.expunge_all()  # Untether results from session
             return reviews

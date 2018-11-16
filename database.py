@@ -32,8 +32,7 @@ class Post(Base):
     date = Column(DateTime, nullable=False)
     author_id = Column(String(32), nullable=False)
     source = Column(String(50))
-    processed = Column(Boolean, default=False)
-
+    sentiment = Column(Integer, nullable = True)
     __mapper_args__ = {
         'polymorphic_identity': 'post',
         'polymorphic_on': source
