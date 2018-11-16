@@ -241,6 +241,7 @@ class TrustPilotCrawler:
         the_datetime = datetime(year=int(date[0]), month=int(date[1]), day=int(date[2]),
                                 hour=int(time[0]), minute=int(time[1]), second=int(time[2].split('.')[0]))
         contents = f"{review['title']}. {review['body']}"
+        contents = ' '.join(get_processed_text(contents, no_stopwords=False))
         user = review['user']
         review_count = review['review_count']
         identifier = f'trustpilot-{user}-{date}-{review_count}'

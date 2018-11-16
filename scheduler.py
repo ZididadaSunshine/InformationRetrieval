@@ -7,6 +7,7 @@ from time import sleep
 
 from dbhandler import DBHandler
 from scrapers.trustpilot_crawler import TrustPilotCrawler
+from scrapers.reddit_scraper import RedditScraper
 
 
 class Scheduler:
@@ -24,11 +25,11 @@ class Scheduler:
 
         # TODO: Load synonyms from gateway DB and put them in the queue
         self.synonym_queue = Queue()
-        self.all_synonyms = []
+        self.all_synonyms = set()
 
         # TODO: Instantiate fields for crawler and scraper
         self.trustpilot = TrustPilotCrawler()
-        self.reddit = None
+        self.reddit = RedditScraper()
 
         # TODO: Instantiate fields for KWE and SE
         self.kwe = None
@@ -134,9 +135,9 @@ class Scheduler:
     def add_synonym(self, synonym):
         self.local_db.commit_synonyms([synonym])
         self.synonym_queue.put(synonym)
-        self.all_synonyms.append(synonym)
+        self.all_synonyms.add(synonym)
         self.trustpilot.add_synonym(synonym)
-        # TODO: Add to Reddit scraper as well
+        self.reddit.use_synonyms(self.all_synonyms)
 
 
 s = Scheduler()
