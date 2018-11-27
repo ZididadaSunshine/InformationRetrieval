@@ -17,6 +17,7 @@ class RedditScraper:
     def __init__(self):
         self.db_handler = DBHandler()
         self.synonyms = {}
+        self.buffer = []
 
         # Initialize reddit client
         self.client = praw.Reddit(client_id=Secrets.REDDIT_CLIENT_ID, client_secret=Secrets.REDDIT_CLIENT_SECRET,
@@ -60,7 +61,16 @@ class RedditScraper:
         # Stopwords are not removed yet, as they are needed for sentiment analysis
         body_text = ' '.join(get_processed_text(body_text, no_stopwords=False))
 
-        self.db_handler.commit_reddit(unique_id, matching_synonyms, body_text, author, subreddit, date)
+        self.buffer.append({"id": unique_id, "synonyms": matching_synonyms, "text": body_text, "author": author,
+                            "date": date, "subreddit": subreddit})
+
+    def get_buffer_contents(self):
+        temp = self.buffer.copy()
+        self.buffer.clear()
+        return temp
+
+    def get_latest_guaranteed_time(self):
+        pass
 
     def scrape_submissions(self):
         for entry in self.client.subreddit('all').stream.submissions():

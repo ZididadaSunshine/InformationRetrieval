@@ -68,17 +68,12 @@ class TrustPilotCrawler:
                     print('-------------------------------------------------------------------------------------')
 
                 reviews, next_page = self._get_reviews_from_url(review_page_url=url)
-                # Store the extracted reviews 
-                already_seen = False
+                # Store the extracted reviews
                 for review in reviews:
-                    # Only save the review if we have not seen it
-                    successful_commit = self.ensure_data_store(synonym, review)
-                    if not successful_commit:
-                        # Break out of the for loop, we already stored to object.
-                        break
+                    self._process_entry(synonym, review)
 
                 # Requeue the synonym dict 
-                if (next_page is not None) and not already_seen:
+                if next_page is not None:
                     url_queue.put(next_page)
 
                 queue.put(synonym_urls)
@@ -218,18 +213,7 @@ class TrustPilotCrawler:
         date = date.find('time')['datetime']
         return date
 
-    def ensure_data_store(self, synonym, review):
-        """
-        Returns false if the review has been seen, otherwise true.
-        Takes a review an verifies whether or not this review has been seen before. 
-        This is determined by looking at the date and the user. If it has been seen, 
-        the function does nothing. Otherwise, an entry is made to the seen_reviews 
-        dictionary with this user and date.
-        """
-
-        return self.commit_review(synonym, review)
-
-    def commit_review(self, synonym, review):
+    def _process_entry(self, synonym, review):
         """
         Commits a synonym <--> post relation to the database. 
         """
@@ -246,5 +230,10 @@ class TrustPilotCrawler:
         review_count = review['review_count']
         identifier = f'trustpilot-{user}-{date}-{review_count}'
 
-        return self.db.commit_trustpilot(synonym=synonym, contents=contents, date=the_datetime,
-                                         identifier=identifier, num_user_ratings=review_count, user=user)
+        self.buffer.append({"id": identifier, "synonyms": {synonym}, "text": contents, "author": user,
+                            "date": the_datetime, "num_ratings": review_count})
+
+    def get_buffer_contents(self):
+        temp = self.buffer.copy()
+        self.buffer.clear()
+        return temp
