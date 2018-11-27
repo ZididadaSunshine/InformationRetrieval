@@ -4,6 +4,8 @@ import os
 from datetime import datetime
 import time
 from time import sleep
+import requests
+import json
 
 from dbhandler import DBHandler
 from scrapers.trustpilot_crawler import TrustPilotCrawler
@@ -57,12 +59,40 @@ class Scheduler:
 
     def _threaded_schedule(self):
         while True:
-            next_synonym = self.synonym_queue.get()
-            reviews = self.fetch_new_reviews(synonym=next_synonym, with_sentiment=False)
+            # get reviews
+            self.retrieve_and_commit_reviews()
+
+            # get synonyms
+            synonyms = self.fetch_all_synonyms()
+            synonym_keys = synonyms.keys()
+
+            # commit synonyms to local db and send to crawlers
+            self.local_db.commit_synonyms(synonym_keys)
+            self.reddit.use_synonyms(synonym_keys)
+            self.trustpilot.add_synonyms(synonym_keys)
+
             # TODO: Analyse sentiment for all reviews and store result in local database.
 
-            self.synonym_queue.put(next_synonym)  # Requeue synonym
+            #
+            sleep(2)
+
         pass
+
+
+    def retrieve_and_commit_reviews(self):
+        # Get reviews from each crawler
+        tp_reviews = self.trustpilot.get_buffer_contents()
+        reddit_reviews = self.reddit.get_buffer_contents()
+
+        # Commit reviews to the database
+        for review in tp_reviews:
+            self.local_db.commit_trustpilot(identifier=review["id"], synonym=review["synonym"],
+                                            contents=review["text"], user=review["author"], date=review["date"],
+                                            num_user_ratings=review["num_ratings"])
+        for review in reddit_reviews:
+            self.local_db.commit_reddit(unique_id=review["id"], synonyms=review["synonyms"], text=review["text"],
+                                        author=review["author"], date=review["date"], subreddit=review["subreddit"])
+
 
     def begin_kwe_schedule(self):
         # TODO:
@@ -90,8 +120,7 @@ class Scheduler:
         pass
 
     def fetch_all_synonyms(self):
-        # TODO: Fetch all synonyms from the database.
-        pass
+        return json.loads(requests.get("http://172.28.198.101:8000/api/synonyms").json())
 
     def fetch_new_reviews(self, synonym, with_sentiment=False):
         """

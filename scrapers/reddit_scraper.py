@@ -7,7 +7,7 @@ from KeywordExtraction.preprocessing.text_preprocessing import get_processed_tex
 from bs4 import BeautifulSoup
 from praw.models import Submission
 
-from dbhandler import DBHandler
+
 from secrets import Secrets
 
 
@@ -15,7 +15,6 @@ class RedditScraper:
     _remove_table = str.maketrans({key: None for key in string.punctuation})
 
     def __init__(self):
-        self.db_handler = DBHandler()
         self.synonyms = {}
         self.buffer = []
 
@@ -28,7 +27,6 @@ class RedditScraper:
 
     def use_synonyms(self, synonyms):
         self.synonyms = synonyms
-        self.db_handler.commit_synonyms(synonyms)
 
     def _normalize(self, token):
         """ Normalize a word by converting it to lowercase and removing puncutation """
@@ -70,6 +68,7 @@ class RedditScraper:
         return temp
 
     def get_latest_guaranteed_time(self):
+        # TODO: return time before which we guarantee all posts have been retrieved.
         pass
 
     def scrape_submissions(self):

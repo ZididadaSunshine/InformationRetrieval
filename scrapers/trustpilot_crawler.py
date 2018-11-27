@@ -9,7 +9,6 @@ from KeywordExtraction.preprocessing.text_preprocessing import get_processed_tex
 
 from bs4 import BeautifulSoup as bs
 
-from dbhandler import DBHandler
 
 
 class TrustPilotCrawler:
@@ -23,7 +22,6 @@ class TrustPilotCrawler:
     """
 
     def __init__(self):
-        self.db = DBHandler()
         self.synonyms = []
 
         # The synonym queue is a queue of dictionaries: 
@@ -107,6 +105,10 @@ class TrustPilotCrawler:
             url_queue.put(page)
 
         # Add to the global synonym queue
+        if {synonym: url_queue} not in self.synonym_queue:
+            self.synonym_queue.put({synonym: url_queue})
+
+        # TODO: check if url is in queue already. maybe implement a set queue or something.
         self.synonym_queue.put({synonym: url_queue})
         self.synonyms.add(synonym)
 
@@ -230,10 +232,14 @@ class TrustPilotCrawler:
         review_count = review['review_count']
         identifier = f'trustpilot-{user}-{date}-{review_count}'
 
-        self.buffer.append({"id": identifier, "synonyms": {synonym}, "text": contents, "author": user,
+        self.buffer.append({"id": identifier, "synonym": synonym, "text": contents, "author": user,
                             "date": the_datetime, "num_ratings": review_count})
 
     def get_buffer_contents(self):
         temp = self.buffer.copy()
         self.buffer.clear()
         return temp
+
+    def get_latest_guaranteed_time(self):
+        # TODO: return time before which we guarantee all posts have been retrieved.
+        pass
