@@ -9,29 +9,13 @@ class DBHandler:
     def __init__(self):
         pass
 
-    def get_new_reviews(self, synonym, with_sentiment=False):
+    def get_new_posts(self, synonym=None, with_sentiment=False):
         with session_scope() as session:
             # Retrieve all posts relating to this synonym
             # TODO: Make sure that the found reviews have not had their sentiment analysed yet.
-            query = f'''
-                    WITH posts AS (
-                        SELECT * 
-                        FROM post p 
-                        JOIN synonym_post_association a ON p.id = a.post_id 
-                    ) 
-                    SELECT ps.id, ps.contents 
-                    FROM synonym s
-                    JOIN posts ps WHERE s.id = ps.synonym_id 
-                                    AND s.name = "{synonym}"
-                '''
+            posts = session.query(Post).filter(Post.sentiment.is_(None)).all()
 
-            if not with_sentiment:
-                query += 'AND ps.sentiment IS NULL'
-
-            reviews = session.query(Post).from_statement(text(query)).all()
-
-            session.expunge_all()  # Untether results from session
-            return reviews
+            return {post.id: post.contents for post in posts}
 
     def commit_trustpilot(self, synonym, contents, date, identifier, num_user_ratings, user, verbose=False):
         """
@@ -117,6 +101,20 @@ class DBHandler:
                     continue
 
                 session.add(Synonym(name=synonym))
+
+            session.commit()
+    def update_sentiments(self, sentiments):
+        """
+        Updates sentiment for posts.
+        :param sentiments:
+        {
+            id        : string,
+            sentiment : float
+        }
+        """
+        with session_scope() as session:
+            for item in sentiments:
+                session.query(Post).filter(Post.id == item["id"]).update({"sentiment": item["sentiment"]})
 
             session.commit()
 

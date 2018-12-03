@@ -1,7 +1,7 @@
 import datetime
 import re
 import string
-
+from threading import Thread
 import praw
 from KeywordExtraction.preprocessing.text_preprocessing import get_processed_text
 from bs4 import BeautifulSoup
@@ -17,6 +17,8 @@ class RedditScraper:
     def __init__(self):
         self.synonyms = {}
         self.buffer = []
+        self.comments_thread = Thread(target=self.scrape_comments, daemon=True)
+        self.submissions_thread = Thread(target=self.scrape_submissions, daemon=True)
 
         # Initialize reddit client
         self.client = praw.Reddit(client_id=Secrets.REDDIT_CLIENT_ID, client_secret=Secrets.REDDIT_CLIENT_SECRET,
@@ -79,6 +81,10 @@ class RedditScraper:
     def scrape_comments(self):
         for entry in self.client.subreddit('all').stream.comments():
             self._process_entry(entry)
+
+    def begin_crawl(self):
+        self.comments_thread.start()
+        self.submissions_thread.start()
 
 
 if __name__ == "__main__":
