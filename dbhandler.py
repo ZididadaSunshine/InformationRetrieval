@@ -19,7 +19,7 @@ class DBHandler:
                         FROM post p 
                         JOIN synonym_post_association a ON p.id = a.post_id 
                     ) 
-                    SELECT * 
+                    SELECT ps.id, ps.contents 
                     FROM synonym s
                     JOIN posts ps WHERE s.id = ps.synonym_id 
                                     AND s.name = "{synonym}"

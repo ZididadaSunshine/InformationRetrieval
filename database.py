@@ -3,6 +3,7 @@ from contextlib import contextmanager
 from sqlalchemy import Column, ForeignKey, Integer, Text, String, create_engine, DateTime, Boolean
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship, sessionmaker
+import os
 
 Base = declarative_base()
 
@@ -10,7 +11,7 @@ Base = declarative_base()
 class SynonymPostAssociation(Base):
     __tablename__ = 'synonym_post_association'
     synonym_id = Column(Integer, ForeignKey('synonym.id'), primary_key=True)
-    post_id = Column(Integer, ForeignKey('post.id'), primary_key=True)
+    post_id = Column(String(32), ForeignKey('post.id'), primary_key=True)
 
 
 class Synonym(Base):
@@ -67,8 +68,7 @@ class TrustpilotPost(Post):
     }
 
 
-engine = create_engine('sqlite:///posts.db')
-
+engine = create_engine(f'postgresql://{os.environ["DB_USERNAME"]}:{os.environ["DB_PASSWORD"]}@{os.environ["DB_HOST"]}/{os.environ["DB_DATABASE"]}')
 Base.metadata.bind = engine
 
 Session = sessionmaker(bind=engine)
