@@ -1,5 +1,0 @@
-class Secrets:
-    REDDIT_USERNAME = None
-    REDDIT_PASSWORD = None
-    REDDIT_CLIENT_SECRET = None
-    REDDIT_CLIENT_ID = None
