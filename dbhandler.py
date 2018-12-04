@@ -24,6 +24,16 @@ class DBHandler:
 
             return {post.id: post.contents for post in posts}
 
+    def get_kwe_posts(self, syn):
+        with session_scope() as session:
+            posts = session.query(Post).\
+                filter(Post.sentiment.isnot(None), Post.contents.isnot(None)).\
+                join(Post.synonyms).\
+                filter(Synonym.name == syn).\
+                all()
+
+            return [{"id": post.id, "content": post.contents, "sentiment": post.sentiment} for post in posts]
+
     def commit_trustpilot(self, synonym, contents, date, identifier, num_user_ratings, user, verbose=False):
         """
         Input: 
