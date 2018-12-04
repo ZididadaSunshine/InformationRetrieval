@@ -3,6 +3,7 @@ import hashlib
 from database import Synonym, Post, SynonymPostAssociation, TrustpilotPost, session_scope, RedditPost
 from sqlalchemy.sql import text
 from sqlalchemy.orm import joinedload
+from sqlalchemy.ext import baked
 
 
 class DBHandler:
@@ -11,8 +12,14 @@ class DBHandler:
 
     def get_new_posts(self, synonym=None, with_sentiment=False):
         with session_scope() as session:
+            baked_query = baked.bakery(lambda s: s.query(Post).filter(Post.sentiment.is_(None)))
             # Retrieve all posts relating to this synonym
             # TODO: Make sure that the found reviews have not had their sentiment analysed yet.
+            #if with_sentiment is False:
+            #    baked_query += lambda q: q.filter(Post.sentiment.is_(None))
+            #else:
+            #    baked_query += lambda q: q.filter(Post.sentiment.isnot_(None))
+
             posts = session.query(Post).filter(Post.sentiment.is_(None)).all()
 
             return {post.id: post.contents for post in posts}

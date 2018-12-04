@@ -24,13 +24,16 @@ class Scheduler:
         self.synonym_queue = Queue()
         self.all_synonyms = set()
 
-        # TODO: Instantiate fields for crawler and scraper
         self.trustpilot = TrustPilotCrawler()
         self.reddit = RedditScraper()
 
-        # TODO: Instantiate fields for KWE and SE
-        self.kwe = None
-        self.se = "http://172.28.198.101:8002/prediction/"
+        # TODO: Make Environment Variables for API info
+        self.kwe_api = "http://172.28.198.101:8001/"
+        self.kwe_api_key = {"Authorization": "Anders"}
+        self.se_api = "http://172.28.198.101:8002/prediction/"
+        self.synonym_api = "http://172.28.198.101:8000/api/synonyms"
+        self.synonym_api_key = {"Authorization": "BallsTheRetard"}
+
 
         pass
 
@@ -88,7 +91,7 @@ class Scheduler:
             content_list.append(content)
 
         # Call the SentimentAnalysis API
-        predictions = json.loads(requests.post(self.se, json=dict(data=content_list)).text)
+        predictions = json.loads(requests.post(self.se_api, json=dict(data=content_list)).text)
         print(predictions)
 
         # Combine predictions with posts
@@ -148,8 +151,7 @@ class Scheduler:
         pass
 
     def fetch_all_synonyms(self):
-        return json.loads(requests.get("http://172.28.198.101:8000/api/synonyms").json())
-
+        return requests.get(self.synonym_api, headers= self.synonym_api_key).json()
     def fetch_new_posts(self, synonym, with_sentiment=False):
         """
         Returns all newly crawled posts from the crawler and scraper that
@@ -158,6 +160,10 @@ class Scheduler:
         :param with_sentiment : boolean - if set to false, only returns rows where sentiment = NULL.
         """
         return self.local_db.get_new_posts(synonym, with_sentiment=with_sentiment)
+
+    def keyword_extract(self):
+        #for s in self.all_synonyms:
+            #posts = self.local_db.get_new_posts(synonym=s, with_sentiment=True)
         pass
 
     def commit_keywords_with_sentiment(self, keywords):
@@ -180,28 +186,42 @@ class Scheduler:
         self.local_db.commit_synonyms([synonym])
         self.synonym_queue.put(synonym)
         self.all_synonyms.add(synonym)
-        #self.trustpilot.add_synonym(synonym)
+        self.trustpilot.add_synonym(synonym)
         self.reddit.use_synonyms(self.all_synonyms)
 
 
 s = Scheduler()
 print('Scheduler initialized')
-s.add_synonyms(['dsb', 'apple', 'google'])
+
+syn = s.fetch_all_synonyms()
+print(f'{len(syn)} synonyms retrieved from gateway')
+for sy in syn:
+    print(sy)
+s.add_synonyms(syn)
 print('Synonyms added')
+
 s.reddit.begin_crawl()
-print('Crawl started')
+s.trustpilot.begin_crawl()
+print('Crawlers started')
 
 print('waiting 10s')
 for i in range(0, 10):
-    print(10 - i)
+    print(f'{10 - i}' + '\r')
     sleep(1)
 
-posts = s.retrieve_reviews()
-print(f'{len(posts)} posts retrieved from crawlers')
-print(posts)
+r_posts = s.retrieve_reviews()
+print(f'{len(r_posts)} posts retrieved from reddit crawler')
+print(r_posts)
 
-s.commit_reviews(posts)
-print('posts committed to db')
+s.commit_reviews(r_posts)
+print('Reddit posts committed to db')
+
+tp_posts = s.retrieve_reviews()
+print(f'{len(tp_posts)} posts retrieved from trustpilot crawler')
+print(tp_posts)
+
+s.commit_reviews(tp_posts)
+print('Trustpilot posts committed to db')
 
 
 results = s.fetch_new_posts(synonym='google', with_sentiment=False)
@@ -217,3 +237,4 @@ for item in sent:
 
 s.local_db.update_sentiments(sent)
 print('sentiments committed to db')
+
