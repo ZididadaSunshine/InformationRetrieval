@@ -36,7 +36,7 @@ class Scheduler:
         self.synonym_api_key = {"Authorization": os.environ["GATEWAY_API_KEY"]}
 
         self.schedule_thread = Thread()
-        pass
+        self.begin_schedule(0)
 
     def begin_schedule(self, debug=0):
         # TODO:
@@ -57,7 +57,6 @@ class Scheduler:
         self.reddit.begin_crawl()
         self.schedule_thread = Thread(target=self._threaded_schedule(debug), daemon=True)
         self.schedule_thread.start()
-        pass
 
     def _threaded_schedule(self, debug):
         while True:
@@ -111,7 +110,6 @@ class Scheduler:
             if debug > 0:
                 print('waiting')
             sleep(10)
-        pass
 
     def calculate_sentiment(self, posts):
         """
