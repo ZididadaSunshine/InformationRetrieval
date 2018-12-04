@@ -28,16 +28,17 @@ class Scheduler:
         self.reddit = RedditScraper()
 
         # TODO: Make Environment Variables for API info
-        self.kwe_api = "http://172.28.198.101:8001/"
-        self.kwe_api_key = {"Authorization": "Anders"}
-        self.se_api = "http://172.28.198.101:8002/prediction/"
-        self.synonym_api = "http://172.28.198.101:8000/api/synonyms"
-        self.synonym_api_key = {"Authorization": "BallsTheRetard"}
+        self.kwe_api = f"http://{os.environ['KWE_API_HOST']}"
+        self.kwe_api_key = {"Authorization": os.environ["KWE_API_KEY"]}
+        self.sa_api = f"http://{os.environ['SA_API_HOST']}/prediction/"
+        self.sa_api_key = {"Authorization": os.environ["SA_API_KEY"]}
+        self.synonym_api = f"http://{os.environ['GATEWAY_API_HOST']}/api/synonyms"
+        self.synonym_api_key = {"Authorization": os.environ["GATEWAY_API_KEY"]}
 
-
+        self.schedule_thread = Thread()
         pass
 
-    def begin_schedule(self):
+    def begin_schedule(self, debug=0):
         # TODO:
         # This should be run as a separate thread.
         # Start a KWE scheduling thread.
@@ -53,26 +54,63 @@ class Scheduler:
         # Conduct KWE for all texts with the same sentiment.
         # In the main database, save the top-5-keywords with a relation
         # to both the synonym and their sentiment.
+        self.reddit.begin_crawl()
+        self.schedule_thread = Thread(target=self._threaded_schedule(debug), daemon=True)
+        self.schedule_thread.start()
         pass
 
-    def _threaded_schedule(self):
+    def _threaded_schedule(self, debug):
         while True:
             # get synonyms
             synonyms = self.fetch_all_synonyms()
+
+            if debug > 0:
+                print(f'{len(synonyms)} synonyms retrieved from gateway')
+                if debug > 1:
+                    for s in synonyms.keys():
+                        print(s)
+
             synonym_keys = synonyms.keys()
             self.add_synonyms(synonym_keys)
+            if debug > 0:
+                print('synonyms updated')
 
             # get and commit new reviews
-            reviews = self.retrieve_reviews()
-            self.commit_reviews(reviews)
+            new_posts = self.retrieve_reviews()
+            if debug > 0:
+                print(f'{len(new_posts["trustpilot"]) + len(new_posts["reddit"])} posts retrieved from crawlers')
+                if debug > 1:
+                    print('Trustpilot posts:')
+                    for i in new_posts["trustpilot"]:
+                        print(i)
+                    print('Reddit posts:')
+                    for i in new_posts["reddit"]:
+                        print(i)
+
+            self.commit_reviews(new_posts)
+            if debug > 0:
+                print('posts committed to DB')
 
             # TODO: Analyse sentiment for all reviews and store result in local database.
-
             posts = self.fetch_new_posts()
-            post_ids_with_sentiment = self.calculate_sentiment(posts)
-            self.local_db.update_sentiments(post_ids_with_sentiment)
+            if debug > 0:
+                print(f'{len(posts)} posts retrieved from DB')
 
-            sleep(2)
+            if len(posts) > 0:
+                sent = self.calculate_sentiment(posts)
+                if debug > 0:
+                    print(f'{len(sent)} sentiments calculated')
+                    if debug > 1:
+                        for item in sent:
+                            print(f'Id: {item["id"]}, Sentiment: {item["sentiment"]}')
+
+                self.local_db.update_sentiments(sent)
+                if debug > 0:
+                    print('sentiments committed to db')
+
+            if debug > 0:
+                print('waiting')
+            sleep(10)
         pass
 
     def calculate_sentiment(self, posts):
@@ -91,7 +129,7 @@ class Scheduler:
             content_list.append(content)
 
         # Call the SentimentAnalysis API
-        predictions = json.loads(requests.post(self.se_api, json=dict(data=content_list)).text)
+        predictions = json.loads(requests.post(self.sa_api, json=dict(data=content_list)).text)
         print(predictions)
 
         # Combine predictions with posts
@@ -152,14 +190,14 @@ class Scheduler:
 
     def fetch_all_synonyms(self):
         return requests.get(self.synonym_api, headers= self.synonym_api_key).json()
-    def fetch_new_posts(self, synonym, with_sentiment=False):
+    def fetch_new_posts(self, synonym=None, with_sentiment=False):
         """
         Returns all newly crawled posts from the crawler and scraper that
         relate to this synonym.
         :param synonym : string
         :param with_sentiment : boolean - if set to false, only returns rows where sentiment = NULL.
         """
-        return self.local_db.get_new_posts(synonym, with_sentiment=with_sentiment)
+        return self.local_db.get_new_posts(synonym, with_sentiment)
 
     def keyword_extract(self):
         #for s in self.all_synonyms:
@@ -186,55 +224,9 @@ class Scheduler:
         self.local_db.commit_synonyms([synonym])
         self.synonym_queue.put(synonym)
         self.all_synonyms.add(synonym)
-        self.trustpilot.add_synonym(synonym)
+        #self.trustpilot.add_synonym(synonym)
         self.reddit.use_synonyms(self.all_synonyms)
 
 
 s = Scheduler()
-print('Scheduler initialized')
-
-syn = s.fetch_all_synonyms()
-print(f'{len(syn)} synonyms retrieved from gateway')
-for sy in syn:
-    print(sy)
-s.add_synonyms(syn)
-print('Synonyms added')
-
-s.reddit.begin_crawl()
-s.trustpilot.begin_crawl()
-print('Crawlers started')
-
-print('waiting 10s')
-for i in range(0, 10):
-    print(f'{10 - i}' + '\r')
-    sleep(1)
-
-r_posts = s.retrieve_reviews()
-print(f'{len(r_posts)} posts retrieved from reddit crawler')
-print(r_posts)
-
-s.commit_reviews(r_posts)
-print('Reddit posts committed to db')
-
-tp_posts = s.retrieve_reviews()
-print(f'{len(tp_posts)} posts retrieved from trustpilot crawler')
-print(tp_posts)
-
-s.commit_reviews(tp_posts)
-print('Trustpilot posts committed to db')
-
-
-results = s.fetch_new_posts(synonym='google', with_sentiment=False)
-print(f'{len(results)} posts retrieved from db')
-
-for id, text in results.items():
-    print(f'Id: {id}. Text: {text}')
-
-sent = s.calculate_sentiment(results)
-print(f'{len(sent)} sentiments calculated')
-for item in sent:
-    print(f'Id: {item["id"]}, Sentiment: {item["sentiment"]}')
-
-s.local_db.update_sentiments(sent)
-print('sentiments committed to db')
-
+s.begin_schedule(2)

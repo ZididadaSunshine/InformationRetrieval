@@ -3,12 +3,10 @@ import re
 import string
 from threading import Thread
 import praw
+import os
 from KeywordExtraction.preprocessing.text_preprocessing import get_processed_text
 from bs4 import BeautifulSoup
 from praw.models import Submission
-
-
-from secrets import Secrets
 
 
 class RedditScraper:
@@ -21,7 +19,7 @@ class RedditScraper:
         self.submissions_thread = Thread(target=self.scrape_submissions, daemon=True)
 
         # Initialize reddit client
-        self.client = praw.Reddit(client_id=Secrets.REDDIT_CLIENT_ID, client_secret=Secrets.REDDIT_CLIENT_SECRET,
+        self.client = praw.Reddit(client_id=os.environ["REDDIT_CLIENT_ID"], client_secret=os.environ["REDDIT_CLIENT_SECRET"],
                                   user_agent='Zididada Sunshine')
 
     def _remove_punctuation(self, text):
