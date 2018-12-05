@@ -15,7 +15,7 @@ from scrapers.reddit_scraper import RedditScraper
 
 class Scheduler:
 
-    def __init__(self):
+    def __init__(self, debug_level):
 
         # TODO: Set up DB handlers
         self.main_db = None
@@ -40,7 +40,7 @@ class Scheduler:
                                      {"category": "negative", "upper_limit": 0.5, "lower_limit": 0}]
 
         self.schedule_thread = Thread()
-        self.debug = 1
+        self.debug = debug_level
         self.begin_schedule()
 
     def begin_schedule(self):
@@ -65,7 +65,6 @@ class Scheduler:
         self.schedule_thread.start()
 
     def _threaded_schedule(self):
-        clock = 0
         while True:
             if self.continue_schedule is False:
                 pass
@@ -117,15 +116,16 @@ class Scheduler:
                 if self.debug > 0:
                     print('sentiments committed to db')
 
-            if clock >= 0:
+            if False:
                 if self.debug > 0:
                     print("Begining KWE")
                 for syn in self.all_synonyms:
-                    tmp = self.keyword_extract(syn)
+                    if syn != "apple":
+                        tmp = self.keyword_extract(syn)
 
             if self.debug > 0:
                 print('waiting')
-            clock += 10
+
             sleep(10)
             pass
 
@@ -219,17 +219,22 @@ class Scheduler:
         if self.debug >= level:
             print(message)
 
-    def keyword_extract(self, synonym):
+    def keyword_extract(self, synonym, from_time=datetime.min, to_time=datetime.now()):
         """
         :param synonym: string
+        :param from_time: datetime
+        :param to_time: datetime
         """
         result = []
-        posts = self.local_db.get_kwe_posts(synonym)
+        posts = self.local_db.get_kwe_posts(synonym, from_time, to_time)
 
         self._debug(f"{len(posts)} retrieved for synonym \"{synonym}\"", 1)
 
-        avg_sentiment = mean([p["sentiment"] for p in posts])
-
+        if len(posts) > 0:
+            avg_sentiment = mean([p["sentiment"] for p in posts])
+        else:
+            avg_sentiment = -1
+        self._debug(f'avg_sentiment: {avg_sentiment}', 1)
         splits = [{"sentiment_category": sc["category"],
                    "posts": [p["content"] for p in posts if sc["upper_limit"] >= p["sentiment"] >= sc["lower_limit"]]}
                   for sc in self.sentiment_categories]
@@ -241,12 +246,12 @@ class Scheduler:
             combined = " ".join(split["posts"])
             keywords = json.loads(requests.post(self.kwe_api, json=dict(text=combined), headers=self.kwe_api_key).text)
             if self.debug > 0:
-                print(f"Category: {split['sentiment_category']}, Keywords: {keywords}")
+                print(f"Category: {split['sentiment_category']}, Num_posts: {len(split['posts'])}, Keywords: {keywords}")
             result.append({"sentiment": split['sentiment_category'], "keywords": keywords, "num_posts": len(split)})
 
         return {"synonym": synonym,
-                "from": None,
-                "to": None,
+                "from": from_time,
+                "to": to_time,
                 "num_posts": len(posts),
                 "avg_sentiment": avg_sentiment,
                 "categories": result}
@@ -276,10 +281,6 @@ class Scheduler:
         self.reddit.use_synonyms(self.all_synonyms)
 
 
-s = Scheduler()
+s = Scheduler(3)
 print("Scheduler initialized")
-sleep(2)
-for syn in s.all_synonyms:
-    pos = s.local_db.get_kwe_posts(syn)
-    print(f"{len(pos)} retrieved for synonym \"{syn}\"")
 
