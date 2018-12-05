@@ -6,6 +6,7 @@ import time
 from time import sleep
 import requests
 import json
+from statistics import mean
 
 from dbhandler import DBHandler
 from scrapers.trustpilot_crawler import TrustPilotCrawler
@@ -14,7 +15,7 @@ from scrapers.reddit_scraper import RedditScraper
 
 class Scheduler:
 
-    def __init__(self):
+    def __init__(self, debug_level):
 
         # TODO: Set up DB handlers
         self.main_db = None
@@ -24,15 +25,23 @@ class Scheduler:
         self.synonym_queue = Queue()
         self.all_synonyms = set()
 
-        # TODO: Instantiate fields for crawler and scraper
         self.trustpilot = TrustPilotCrawler()
         self.reddit = RedditScraper()
 
-        # TODO: Instantiate fields for KWE and SE
-        self.kwe = None
-        self.se = "http://172.28.198.101:8002/prediction/"
+        # TODO: Make Environment Variables for API info
+        self.kwe_api = f"http://{os.environ['KWE_API_HOST']}/"
+        self.kwe_api_key = {"Authorization": os.environ["KWE_API_KEY"]}
+        self.sa_api = f"http://{os.environ['SA_API_HOST']}/prediction/"
+        self.sa_api_key = {"Authorization": os.environ["SA_API_KEY"]}
+        self.synonym_api = f"http://{os.environ['GATEWAY_API_HOST']}/api/synonyms"
+        self.synonym_api_key = {"Authorization": os.environ["GATEWAY_API_KEY"]}
 
-        pass
+        self.sentiment_categories = [{"category": "positive", "upper_limit": 1, "lower_limit": 0.5},
+                                     {"category": "negative", "upper_limit": 0.5, "lower_limit": 0}]
+
+        self.schedule_thread = Thread()
+        self.debug = debug_level
+        self.begin_schedule()
 
     def begin_schedule(self):
         # TODO:
@@ -50,26 +59,75 @@ class Scheduler:
         # Conduct KWE for all texts with the same sentiment.
         # In the main database, save the top-5-keywords with a relation
         # to both the synonym and their sentiment.
-        pass
+        self.reddit.begin_crawl()
+        self.continue_schedule = True
+        self.schedule_thread = Thread(target=self._threaded_schedule(), daemon=True)
+        self.schedule_thread.start()
 
     def _threaded_schedule(self):
         while True:
+            if self.continue_schedule is False:
+                pass
+
             # get synonyms
             synonyms = self.fetch_all_synonyms()
+
+            if self.debug > 0:
+                print(f'{len(synonyms)} synonyms retrieved from gateway')
+                if self.debug > 1:
+                    for s in synonyms.keys():
+                        print(s)
+
             synonym_keys = synonyms.keys()
             self.add_synonyms(synonym_keys)
+            if self.debug > 0:
+                print('synonyms updated')
 
-            # get new reviews
-            self.retrieve_and_commit_reviews()
+            # get and commit new reviews
+            new_posts = self.retrieve_reviews()
+            if self.debug > 0:
+                print(f'{len(new_posts["trustpilot"]) + len(new_posts["reddit"])} posts retrieved from crawlers')
+                if self.debug > 1:
+                    print('Trustpilot posts:')
+                    for i in new_posts["trustpilot"]:
+                        print(i)
+                    print('Reddit posts:')
+                    for i in new_posts["reddit"]:
+                        print(i)
+
+            self.commit_reviews(new_posts)
+            if self.debug > 0:
+                print('posts committed to DB')
 
             # TODO: Analyse sentiment for all reviews and store result in local database.
-            for synonym in synonym_keys:
-                reviews = self.fetch_new_reviews(synonym, with_sentiment=False)
-                #posts_with_sentiment = self.calculate_sentiment()
-                #self.commit_posts_with_sentiment(posts_with_sentiment)
+            posts = self.fetch_new_posts()
+            if self.debug > 0:
+                print(f'{len(posts)} posts retrieved from DB')
 
-            sleep(2)
-        pass
+            if len(posts) > 0:
+                sent = self.calculate_sentiment(posts)
+                if self.debug > 0:
+                    print(f'{len(sent)} sentiments calculated')
+                    if self.debug > 1:
+                        for item in sent:
+                            print(f'Id: {item["id"]}, Sentiment: {item["sentiment"]}')
+
+                self.local_db.update_sentiments(sent)
+                if self.debug > 0:
+                    print('sentiments committed to db')
+
+            if False:
+                if self.debug > 0:
+                    print("Begining KWE")
+                for syn in self.all_synonyms:
+                    if syn != "apple":
+                        tmp = self.keyword_extract(syn)
+
+            if self.debug > 0:
+                print('waiting')
+
+            sleep(10)
+            pass
 
     def calculate_sentiment(self, posts):
         """
@@ -77,36 +135,38 @@ class Scheduler:
         {
             id        : integer,
             text      : string,
-            sentiment : integer
         }
         """
         # Extract the post contents
-        text = []
-        for item in posts:
-            text.append(item["text"])
-        print(text)
+        id_list = []
+        content_list = []
+        for id, content in posts.items():
+            id_list.append(id)
+            content_list.append(content)
 
         # Call the SentimentAnalysis API
-        predictions = json.loads(requests.post(self.se, json=dict(data=text)).text)
-        print(predictions)
+        predictions = json.loads(requests.post(self.sa_api, json=dict(data=content_list)).text)
 
-        # Assign the predictions to the posts
-        for i in range(0, len(predictions["predictions"])):
-            posts[i]["sentiment"] = predictions["predictions"][i]
+        # Combine predictions with posts
+        results = [{"id": id_list[i], "sentiment": predictions["predictions"][i]}
+                   for i in range(0, len(predictions["predictions"]))]
 
-        return posts
+        return results
 
     def classify_sentiment(self, prediction):
         return prediction >= 0.5
 
-    def commit_sentiments(self, sentiments):
-        # TODO: store sentiments in local database.
-        pass
-
-    def retrieve_and_commit_reviews(self):
+    def retrieve_reviews(self):
         # Get reviews from each crawler
-        tp_reviews = self.trustpilot.get_buffer_contents()
+        #tp_reviews = self.trustpilot.get_buffer_contents()
+        tp_reviews = []
         reddit_reviews = self.reddit.get_buffer_contents()
+        return {"trustpilot": tp_reviews, "reddit": reddit_reviews}
+
+    def commit_reviews(self, reviews):
+        # Get reviews from each crawler
+        tp_reviews = reviews["trustpilot"]
+        reddit_reviews = reviews["reddit"]
 
         # Commit reviews to the database
         for review in tp_reviews:
@@ -144,17 +204,58 @@ class Scheduler:
         pass
 
     def fetch_all_synonyms(self):
-        return json.loads(requests.get("http://172.28.198.101:8000/api/synonyms").json())
+        return requests.get(self.synonym_api, headers=self.synonym_api_key).json()
 
-    def fetch_new_reviews(self, synonym, with_sentiment=False):
+    def fetch_new_posts(self, synonym=None, with_sentiment=False):
         """
         Returns all newly crawled posts from the crawler and scraper that
         relate to this synonym.
         :param synonym : string
         :param with_sentiment : boolean - if set to false, only returns rows where sentiment = NULL.
         """
-        return self.local_db.get_new_reviews(synonym, with_sentiment=with_sentiment)
-        pass
+        return self.local_db.get_new_posts(synonym, with_sentiment)
+
+    def _debug(self, message, level):
+        if self.debug >= level:
+            print(message)
+
+    def keyword_extract(self, synonym, from_time=datetime.min, to_time=datetime.now()):
+        """
+        :param synonym: string
+        :param from_time: datetime
+        :param to_time: datetime
+        """
+        result = []
+        posts = self.local_db.get_kwe_posts(synonym, from_time, to_time)
+
+        self._debug(f"{len(posts)} retrieved for synonym \"{synonym}\"", 1)
+
+        if len(posts) > 0:
+            avg_sentiment = mean([p["sentiment"] for p in posts])
+        else:
+            avg_sentiment = -1
+        self._debug(f'avg_sentiment: {avg_sentiment}', 1)
+        splits = [{"sentiment_category": sc["category"],
+                   "posts": [p["content"] for p in posts if sc["upper_limit"] >= p["sentiment"] >= sc["lower_limit"]]}
+                  for sc in self.sentiment_categories]
+
+        if self.debug > 0:
+            print(f"{synonym} posts split into {len(splits)} sentiment categories")
+
+        for split in splits:
+            combined = " ".join(split["posts"])
+            keywords = json.loads(requests.post(self.kwe_api, json=dict(text=combined), headers=self.kwe_api_key).text)
+            if self.debug > 0:
+                print(f"Category: {split['sentiment_category']}, Num_posts: {len(split['posts'])}, Keywords: {keywords}")
+            result.append({"sentiment": split['sentiment_category'], "keywords": keywords, "num_posts": len(split)})
+
+        return {"synonym": synonym,
+                "from": from_time,
+                "to": to_time,
+                "num_posts": len(posts),
+                "avg_sentiment": avg_sentiment,
+                "categories": result}
+
 
     def commit_keywords_with_sentiment(self, keywords):
         """
@@ -168,18 +269,6 @@ class Scheduler:
         # TODO: Commit keywords w. sentiment to stable storage on main database.
         pass
 
-    def commit_posts_with_sentiment(self, posts):
-        """
-        Commits text posts (with their assigned sentiment) to local storage.
-        :param posts:
-        {
-            date      : UTC datetime object,
-            text      : string,
-            sentiment : boolean
-        }
-        """
-        pass
-
     def add_synonyms(self, synonyms):
         for synonym in synonyms:
             self.add_synonym(synonym)
@@ -188,24 +277,10 @@ class Scheduler:
         self.local_db.commit_synonyms([synonym])
         self.synonym_queue.put(synonym)
         self.all_synonyms.add(synonym)
-        self.trustpilot.add_synonym(synonym)
+        #self.trustpilot.add_synonym(synonym)
         self.reddit.use_synonyms(self.all_synonyms)
 
 
-s = Scheduler()
-#s.add_synonyms(['dsb', 'apple', 'google'])
-#s.trustpilot.begin_crawl()
+s = Scheduler(3)
+print("Scheduler initialized")
 
-#sleep(10)
-
-#results = s.fetch_new_reviews(synonym='google', with_sentiment=False)
-#print(len(results))
-#for result in results:
-#    print(result.contents)
-
-saresults = s.calculate_sentiment([{"id": 1, "text": "jarlun is a great product that is very good", "sentiment": False},
-                                  {"id": 2, "text": "jarlund is a bad product that sucks", "sentiment": False}])
-
-print(len(saresults))
-for result in saresults:
-    print(result)

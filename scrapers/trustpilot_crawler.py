@@ -5,6 +5,7 @@ from queue import Queue
 from threading import Thread
 from time import sleep
 from urllib.request import urlopen
+from util.orderedsetqueue import OrderedSetQueue, UrlQueue
 from KeywordExtraction.preprocessing.text_preprocessing import get_processed_text
 
 from bs4 import BeautifulSoup as bs
@@ -22,14 +23,12 @@ class TrustPilotCrawler:
     """
 
     def __init__(self):
-        self.synonyms = []
-
         # The synonym queue is a queue of dictionaries: 
         # { synonym : Queue(URL) }
         # When a synonym is popped from the queue, the crawler 
         # pops a URL from the synonym's queue. All resulting URLs
         # from the URLs webpage are enqueued in the synonym's URL queue. 
-        self.synonym_queue = Queue()
+        self.synonym_queue = OrderedSetQueue()
 
         self.host_timer = time.time()
         self.crawled_data = {}
@@ -99,18 +98,26 @@ class TrustPilotCrawler:
         if len(review_pages) == 0:
             pass  # Maybe handle this in another way?
 
-        # Enqueue all pages for this synonym 
-        url_queue = Queue()
+        # Enqueue all pages for this synonym
+
+        url_queue = UrlQueue(synonym)
         for page in review_pages:
             url_queue.put(page)
 
-        # Add to the global synonym queue
-        if {synonym: url_queue} not in self.synonym_queue:
-            self.synonym_queue.put({synonym: url_queue})
-
-        # TODO: check if url is in queue already. maybe implement a set queue or something.
-        self.synonym_queue.put({synonym: url_queue})
+        self.addtoqueue(url_queue)
         self.synonyms.add(synonym)
+
+    def addtoqueue(self, urlqueue):
+        for i in range(1, len(self.synonym_queue)):
+            tmp = self.synonym_queue.get()
+            if tmp.tag() in urlqueue.tag():
+                tmp = urlqueue
+            self.synonym_queue.put(tmp)
+
+
+
+
+
 
     def can_ping_yet(self):
         now = time.time()
@@ -174,7 +181,7 @@ class TrustPilotCrawler:
 
         # Reset timer before returning the souped page
         self.host_timer = time.time()
-        return bs(page, features='html5lib')
+        return bs(page)
 
     def _get_reviews_from_url(self, review_page_url):
         """ 
