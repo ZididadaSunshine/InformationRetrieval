@@ -44,7 +44,6 @@ class Scheduler:
 
         self.kwe_interval = timedelta(hours=1)
         self.kwe_latest = datetime(2018, 12, 4, 12)
-        self.snapshot_buffer = []
 
         self.continue_schedule = True
         self.schedule_thread = Thread()
@@ -78,69 +77,39 @@ class Scheduler:
             if not self.continue_schedule:
                 return
 
-            # get synonyms
-            synonyms = self.fetch_all_synonyms()
+            # Retrieve active synonyms from gateway
+            self.add_synonyms(self.fetch_all_synonyms().keys())
 
-            if self.debug > 0:
-                print(f'{len(synonyms)} synonyms retrieved from gateway')
-                if self.debug > 1:
-                    for s in synonyms.keys():
-                        print(s)
+            # Get and commit new posts
+            self.commit_reviews(self.retrieve_posts())
 
-            synonym_keys = synonyms.keys()
-            self.add_synonyms(synonym_keys)
-            if self.debug > 0:
-                print('synonyms updated')
-
-            # get and commit new reviews
-            new_posts = self.retrieve_posts()
-            if self.debug > 0:
-                print(f'{len(new_posts["trustpilot"]) + len(new_posts["reddit"])} posts retrieved from crawlers')
-                if self.debug > 1:
-                    print('Trustpilot posts:')
-                    for i in new_posts['trustpilot']:
-                        print(i)
-                    print('Reddit posts:')
-                    for i in new_posts['reddit']:
-                        print(i)
-
-            self.commit_reviews(new_posts)
-            if self.debug > 0:
-                print('posts committed to DB')
-
-            # TODO: Analyse sentiment for all reviews and store result in local database.
+            # Get and update sentiments for new posts
             posts = self.fetch_new_posts()
-            if self.debug > 0:
-                print(f'{len(posts)} posts retrieved from DB')
+            if posts:
+                sentiments = self.calculate_sentiments(posts)
 
-            if len(posts) > 0:
-                sent = self.calculate_sentiment(posts)
-                if self.debug > 0:
-                    print(f'{len(sent)} sentiments calculated')
-                    if self.debug > 1:
-                        for item in sent:
-                            print(f'Id: {item["id"]}, Sentiment: {item["sentiment"]}')
+                self.local_db.update_sentiments(sentiments)
 
-                self.local_db.update_sentiments(sent)
-                if self.debug > 0:
-                    print('sentiments committed to db')
-
-            if datetime.now() > self.kwe_latest + (2 * self.kwe_interval):
+            # Perform keyword extraction and save snapshots from current interval
+            if datetime.utcnow() > self.kwe_latest + (2 * self.kwe_interval):
                 for synonym in self.all_synonyms:
                     snapshot = self.create_snapshot(synonym, self.kwe_latest, self.kwe_latest+self.kwe_interval)
-                    self.snapshot_buffer.append(snapshot)
+
+                    if snapshot:
+                        snapshot.save_remotely()
+
                 self.kwe_latest += self.kwe_interval
             else:
                 sleep(10)
 
-    def calculate_sentiment(self, posts):
-        '''
+    def calculate_sentiments(self, posts):
+        """
         :param posts:
         {
             id        : integer,
             text      : string,
         }
-        '''
+        """
         # Extract the post contents
         id_list = []
         content_list = []
@@ -204,17 +173,13 @@ class Scheduler:
         statistics = dict()
         posts = self.local_db.get_kwe_posts(synonym, from_time, to_time)
 
-        self._debug(f'{len(posts)} retrieved for synonym \'{synonym}\'', 1)
-
         if posts:
             avg_sentiment = mean([p["sentiment"] for p in posts])
             splits = [{"sentiment_category": sc["category"],
                        "posts": [p["content"] for p in posts if sc["upper_limit"] >= p["sentiment"] >= sc["lower_limit"]]}
                       for sc in self.sentiment_categories]
 
-            if self.debug > 0:
-                print(f"{synonym} posts split into {len(splits)} sentiment categories")
-
+            # For each split of posts, compute keywords and number of posts
             for split in splits:
                 keywords = {}
                 num_posts = len(split["posts"])
@@ -224,7 +189,7 @@ class Scheduler:
                     keywords = requests.post(self.kwe_api, json=dict(posts=split["posts"]),
                                              headers=self.kwe_api_key).json()
 
-                statistics[split['sentiment_category']] = {"keywords": keywords, "num_posts": len(split)}
+                statistics[split['sentiment_category']] = {"keywords": keywords, "posts": len(split)}
         else:
             return None
 
