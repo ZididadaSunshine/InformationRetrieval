@@ -2,6 +2,7 @@ from queue import Queue
 from threading import Thread
 import os
 from datetime import datetime
+from datetime import timedelta
 import time
 from time import sleep
 import requests
@@ -39,6 +40,11 @@ class Scheduler:
         self.sentiment_categories = [{"category": "positive", "upper_limit": 1, "lower_limit": 0.5},
                                      {"category": "negative", "upper_limit": 0.5, "lower_limit": 0}]
 
+        self.kwe_interval = timedelta(hours=1)
+        self.kwe_latest = datetime(2018, 12, 4, 12)
+        self.snapshot_buffer = []
+
+        self.continue_schedule = True
         self.schedule_thread = Thread()
         self.debug = debug_level
         self.begin_schedule()
@@ -60,6 +66,7 @@ class Scheduler:
         # In the main database, save the top-5-keywords with a relation
         # to both the synonym and their sentiment.
         self.reddit.begin_crawl()
+        self.trustpilot.begin_crawl()
         self.continue_schedule = True
         self.schedule_thread = Thread(target=self._threaded_schedule(), daemon=True)
         self.schedule_thread.start()
@@ -116,18 +123,18 @@ class Scheduler:
                 if self.debug > 0:
                     print('sentiments committed to db')
 
-            if False:
+            if datetime.now() > self.kwe_latest + (2 * self.kwe_interval):
                 if self.debug > 0:
                     print("Begining KWE")
-                for syn in self.all_synonyms:
-                    if syn != "apple":
-                        tmp = self.keyword_extract(syn)
+                for syn in ['apple']:
+                    snapshot = self.keyword_extract(syn, self.kwe_latest, self.kwe_latest+self.kwe_interval)
+                    self.snapshot_buffer.append(snapshot)
+                self.kwe_latest += self.kwe_interval
 
             if self.debug > 0:
                 print('waiting')
 
             sleep(10)
-            pass
 
     def calculate_sentiment(self, posts):
         """
@@ -158,8 +165,8 @@ class Scheduler:
 
     def retrieve_reviews(self):
         # Get reviews from each crawler
-        #tp_reviews = self.trustpilot.get_buffer_contents()
-        tp_reviews = []
+        #tp_reviews = []
+        tp_reviews = self.trustpilot.get_buffer_contents()
         reddit_reviews = self.reddit.get_buffer_contents()
         return {"trustpilot": tp_reviews, "reddit": reddit_reviews}
 
@@ -232,22 +239,24 @@ class Scheduler:
 
         if len(posts) > 0:
             avg_sentiment = mean([p["sentiment"] for p in posts])
+            splits = [{"sentiment_category": sc["category"],
+                       "posts": [p["content"] for p in posts if sc["upper_limit"] >= p["sentiment"] >= sc["lower_limit"]]}
+                      for sc in self.sentiment_categories]
+
+            if self.debug > 0:
+                print(f"{synonym} posts split into {len(splits)} sentiment categories")
+
+            for split in splits:
+                if len(split["posts"]) > 0:
+                    #combined = " ".join(split["posts"])
+                    keywords = json.loads(requests.post(self.kwe_api, json=dict(posts=split["posts"]), headers=self.kwe_api_key).text)
+                    if self.debug > 0:
+                        print(f"Category: {split['sentiment_category']}, Num_posts: {len(split['posts'])}, Keywords: {keywords}")
+                    result.append({"sentiment": split['sentiment_category'], "keywords": keywords, "num_posts": len(split)})
         else:
             avg_sentiment = -1
+
         self._debug(f'avg_sentiment: {avg_sentiment}', 1)
-        splits = [{"sentiment_category": sc["category"],
-                   "posts": [p["content"] for p in posts if sc["upper_limit"] >= p["sentiment"] >= sc["lower_limit"]]}
-                  for sc in self.sentiment_categories]
-
-        if self.debug > 0:
-            print(f"{synonym} posts split into {len(splits)} sentiment categories")
-
-        for split in splits:
-            combined = " ".join(split["posts"])
-            keywords = json.loads(requests.post(self.kwe_api, json=dict(text=combined), headers=self.kwe_api_key).text)
-            if self.debug > 0:
-                print(f"Category: {split['sentiment_category']}, Num_posts: {len(split['posts'])}, Keywords: {keywords}")
-            result.append({"sentiment": split['sentiment_category'], "keywords": keywords, "num_posts": len(split)})
 
         return {"synonym": synonym,
                 "from": from_time,
