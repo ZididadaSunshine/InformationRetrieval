@@ -13,46 +13,48 @@ from bs4 import BeautifulSoup as bs
 
 
 class TrustPilotCrawler:
-    """ 
-    Simple single-host crawler that extract company reviews from Trustpilot. 
-    Synonyms can be added dynamically. Performs a Trustpilot search for each synonym 
+    """
+    Simple single-host crawler that extract company reviews from Trustpilot.
+    Synonyms can be added dynamically. Performs a Trustpilot search for each synonym
     and extracts reviews for all query results.
-    Reviews are dynamically saved to a database. 
-    Reviews for a given synonym can be fetched at any time. When synonyms have been fetched 
-    successfully, they are removed from the database. 
+    Reviews are dynamically saved to a database.
+    Reviews for a given synonym can be fetched at any time. When synonyms have been fetched
+    successfully, they are removed from the database.
     """
 
     def __init__(self):
-        # The synonym queue is a queue of dictionaries: 
+        # The synonym queue is a queue of dictionaries:
         # { synonym : Queue(URL) }
-        # When a synonym is popped from the queue, the crawler 
+        # When a synonym is popped from the queue, the crawler
         # pops a URL from the synonym's queue. All resulting URLs
-        # from the URLs webpage are enqueued in the synonym's URL queue. 
+        # from the URLs webpage are enqueued in the synonym's URL queue.
         self.synonym_queue = OrderedSetQueue()
+        self.buffer = []
 
         self.host_timer = time.time()
         self.crawled_data = {}
         self.synonyms = set()
         self.seen_reviews = {}
+        self.crawler_thread = Thread()
 
     def begin_crawl(self, synonyms=None, verbose=False):
         if synonyms is not None:
             self.add_synonyms(synonyms)
 
-        crawler_thread = Thread(target=self._threaded_crawl, args=[self.synonym_queue, verbose], daemon=True)
-        crawler_thread.start()
+        self.crawler_thread = Thread(target=self._threaded_crawl, args=[self.synonym_queue, verbose], daemon=True)
+        self.crawler_thread.start()
 
     def _threaded_crawl(self, queue, verbose=False):
         while True:
             try:
-                # Get the next synonym dict in the queue 
+                # Get the next synonym dict in the queue
                 synonym_urls = queue.get()
                 # Pop the first link in the URL queue
                 url_queue = self._get_url_queue_from_synonym(synonym_urls)
                 synonym = self._get_synonym_from_synonym_dict(synonym_urls)
 
                 if url_queue.empty():
-                    # The queue should be restarted from the initial Trustpilot search. 
+                    # The queue should be restarted from the initial Trustpilot search.
                     self.add_synonym(synonym)
                     # Skip the rest of this loop
                     continue
@@ -69,55 +71,57 @@ class TrustPilotCrawler:
                 for review in reviews:
                     self._process_entry(synonym, review)
 
-                # Requeue the synonym dict 
+                # Requeue the synonym dict
                 if next_page is not None:
                     url_queue.put(next_page)
 
                 queue.put(synonym_urls)
-                # TODO: Check for scheduled data dump 
-                # TODO: Dump data in local database every once in a while. 
-                #       Allow the database to be accessed from anywhere.  
+                # TODO: Check for scheduled data dump
+                # TODO: Dump data in local database every once in a while.
+                #       Allow the database to be accessed from anywhere.
 
             except Exception as e:
                 print(f'Exception encountered in crawling thread: {e}')
                 traceback.print_exc()
                 return
 
-    def add_synonyms(self, synonyms):
-        for synonym in synonyms:
-            self.add_synonym(synonym)
+    def use_synonyms(self, synonyms):
+        self.synonyms = synonyms
+        urlqueues = [self._geturlqueue(synonym) for synonym in self.synonyms]
+        self._updatesynonymqueue(urlqueues)
 
-    def add_synonym(self, synonym):
-        """ 
-        Adds a synonym to the list of tracked synonyms. 
-        Performs a Trustpilot search for the synonym. 
-        All query result links are stored in the synonym's queue, 
-        both of which are added to the synonym queue. 
+    def _geturlqueue(self, synonym):
+        """
+        Adds a synonym to the list of tracked synonyms.
+        Performs a Trustpilot search for the synonym.
+        All query result links are stored in the synonym's queue,
+        both of which are added to the synonym queue.
         """
         review_pages = self._get_synonym_review_pages(synonym)
         if len(review_pages) == 0:
             pass  # Maybe handle this in another way?
 
         # Enqueue all pages for this synonym
-
         url_queue = UrlQueue(synonym)
         for page in review_pages:
             url_queue.put(page)
+        return url_queue
 
-        self.addtoqueue(url_queue)
-        self.synonyms.add(synonym)
-
-    def addtoqueue(self, urlqueue):
-        for i in range(1, len(self.synonym_queue)):
-            tmp = self.synonym_queue.get()
-            if tmp.tag() in urlqueue.tag():
-                tmp = urlqueue
-            self.synonym_queue.put(tmp)
-
-
-
-
-
+    def _updatesynonymqueue(self, urlqueues):
+        """
+        :param urlqueues:
+        [
+            UrlQueue
+        ]
+        """
+        urlqueuedict = {uq.tag(): uq for uq in urlqueues}
+        self.synonym_queue.put(None)
+        urlqueue = self.synonym_queue.get()
+        while urlqueue is not None:
+            new = urlqueuedict.get(urlqueue.tag())
+            if new is not None:
+                self.synonym_queue.put(new)
+            urlqueue = self.synonym_queue.get()
 
     def can_ping_yet(self):
         now = time.time()
@@ -126,8 +130,8 @@ class TrustPilotCrawler:
 
     def _get_synonym_review_pages(self, synonym):
         """
-        Performs a Trustpilot search for the synonym. 
-        Returns all relevant URLs in a list. 
+        Performs a Trustpilot search for the synonym.
+        Returns all relevant URLs in a list.
         """
         soup = self._get_souped_page(f'https://www.trustpilot.com/search?query={synonym}')
         review_pages = soup.findAll("a", {"class": "search-result-heading"}, href=True)
@@ -139,40 +143,40 @@ class TrustPilotCrawler:
         """
         Relevant review pages are linked to with the text (query for "Google"):
             "Google | www.google.com"
-        A non-relevant link could be: 
+        A non-relevant link could be:
             "Google Adwords | www.adwords.google.com"
-        This function returns true if the link text contains a "|", and the 
+        This function returns true if the link text contains a "|", and the
         left hand side of the pipe symbol is exactly the synonym.
         """
 
         return '|' in link_text and (synonym == link_text.split('|')[0].lower().strip())
 
     def _get_next_synonym(self):
-        """ 
+        """
         Returns the next {synonym : Queue(URL)} dict in the queue.
         """
         return self.synonym_queue.get()
 
     def _get_url_queue_from_synonym(self, synonym_dict):
-        """ 
+        """
         Given a {synonym : Queue(URL)} dict, returns the Queue for the synonym.
         """
         return list(synonym_dict.values())[0]
 
     def _get_synonym_from_synonym_dict(self, synonym_dict):
-        """ 
+        """
         Given a {synonym : Queue(URL)} dict, returns the synonym.
         """
         return list(synonym_dict.keys())[0]
 
     def _get_souped_page(self, url):
-        """ 
-        Gets the webpage pointed to by the URL as a parsed 
-        BeatifulSoup object. 
-        NOTE: Always use this method when downloading Trustpilot 
+        """
+        Gets the webpage pointed to by the URL as a parsed
+        BeatifulSoup object.
+        NOTE: Always use this method when downloading Trustpilot
         webpages, as it ensures (time) politeness.
         """
-        # Check if we can ping Trustpilot yet 
+        # Check if we can ping Trustpilot yet
         can_ping, remaining_time = self.can_ping_yet()
         if not can_ping:
             sleep(remaining_time)
@@ -184,9 +188,9 @@ class TrustPilotCrawler:
         return bs(page)
 
     def _get_reviews_from_url(self, review_page_url):
-        """ 
-        Takes a URL for a Trustpilot Review page and downloads it. 
-        After downloading, it extracts all available review texts and returns them. 
+        """
+        Takes a URL for a Trustpilot Review page and downloads it.
+        After downloading, it extracts all available review texts and returns them.
         It also returns the "Next page" link if it exists.
         """
 
@@ -224,10 +228,10 @@ class TrustPilotCrawler:
 
     def _process_entry(self, synonym, review):
         """
-        Commits a synonym <--> post relation to the database. 
+        Commits a synonym <--> post relation to the database.
         """
 
-        # Post attributes  
+        # Post attributes
         date_time = review['date'].split('T')
         date = date_time[0].split('-')
         time = date_time[1].split(':')
