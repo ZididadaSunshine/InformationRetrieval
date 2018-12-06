@@ -10,12 +10,14 @@ Base = declarative_base()
 
 class SynonymPostAssociation(Base):
     __tablename__ = 'synonym_post_association'
+
     synonym_id = Column(Integer, ForeignKey('synonym.id'), primary_key=True)
     post_id = Column(String(32), ForeignKey('post.id'), primary_key=True)
 
 
 class Synonym(Base):
     __tablename__ = 'synonym'
+
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String, unique=True)
     posts = relationship('Post', secondary=SynonymPostAssociation.__tablename__, back_populates='synonyms')
@@ -33,7 +35,7 @@ class Post(Base):
     date = Column(DateTime, nullable=False)
     author_id = Column(String(32), nullable=False)
     source = Column(String(50))
-    sentiment = Column(Float, nullable = True)
+    sentiment = Column(Float, nullable=True)
     __mapper_args__ = {
         'polymorphic_identity': 'post',
         'polymorphic_on': source
@@ -81,9 +83,9 @@ def session_scope():
     try:
         yield session
         session.commit()
-    except:
+    except Exception as e:
         session.rollback()
-        raise
+        raise e
     finally:
         session.close()
 
@@ -93,4 +95,3 @@ if __name__ == "__main__":
     Base.metadata.create_all(engine)
 
     print("Database re-created")
-
