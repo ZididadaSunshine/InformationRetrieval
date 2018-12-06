@@ -160,10 +160,6 @@ class Scheduler:
         """
         return self.local_db.get_new_posts(synonym, with_sentiment)
 
-    def _debug(self, message, level):
-        if self.debug >= level:
-            print(message)
-
     def create_snapshot(self, synonym, from_time=datetime.min, to_time=datetime.now()):
         """
         :param synonym: string
@@ -181,32 +177,22 @@ class Scheduler:
 
             # For each split of posts, compute keywords and number of posts
             for split in splits:
-                keywords = {}
+                keywords = []
                 num_posts = len(split["posts"])
 
                 # Only requests keywords if there are posts
                 if num_posts:
-                    keywords = requests.post(self.kwe_api, json=dict(posts=split["posts"]),
+                    response = requests.post(self.kwe_api, json=dict(posts=split["posts"]),
                                              headers=self.kwe_api_key).json()
 
-                statistics[split['sentiment_category']] = {"keywords": keywords, "posts": len(split)}
+                    keywords = response.get('keywords', [])
+
+                statistics[split['sentiment_category']] = {"keywords": keywords, "posts": num_posts}
         else:
             return None
 
         return Snapshot(spans_from=from_time, spans_to=to_time, sentiment=avg_sentiment, synonym=synonym,
                         statistics=statistics)
-
-    def commit_keywords_with_sentiment(self, keywords):
-        '''
-        :param keywords:
-        {
-            date      : UTC datetime object,
-            keywords  : string[5],
-            sentiment : boolean
-        }
-        '''
-        # TODO: Commit keywords w. sentiment to stable storage on main database.
-        pass
 
     def add_synonyms(self, synonyms):
         for synonym in synonyms:
