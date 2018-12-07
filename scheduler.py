@@ -43,7 +43,7 @@ class Scheduler:
                                      {'category': 'negative', 'upper_limit': 0.5, 'lower_limit': 0}]
 
         self.kwe_interval = timedelta(hours=1)
-        self.kwe_latest = datetime(2018, 12, 4, 12)
+        self.kwe_latest = datetime(2018, 12, 4, 8)
 
         self.continue_schedule = True
         self.schedule_thread = Thread()
@@ -92,6 +92,8 @@ class Scheduler:
 
             # Perform keyword extraction and save snapshots from current interval
             if datetime.utcnow() > self.kwe_latest + (2 * self.kwe_interval):
+                print(f'Current snapshot date: {self.kwe_latest}')
+
                 for synonym in self.all_synonyms:
                     snapshot = self.create_snapshot(synonym, self.kwe_latest, self.kwe_latest+self.kwe_interval)
 
