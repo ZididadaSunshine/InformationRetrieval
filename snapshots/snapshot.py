@@ -1,4 +1,5 @@
 import json
+from logging import getLogger
 
 import requests
 
@@ -24,6 +25,7 @@ class Snapshot:
         try:
             result = requests.post('http://172.28.198.101:8003/api/snapshots', json=data)
 
+            getLogger().info(f'Received status code {result.status_code} while saving snapshot.')
             if result.status_code in self.VALID_STATUS_CODES:
                 return True
         except Exception as e:
