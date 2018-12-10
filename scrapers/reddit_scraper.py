@@ -71,13 +71,13 @@ class RedditScraper:
         self.buffer.clear()
         return temp
 
-    @retry(delay=0.5, backoff=2)
+    @retry(delay=0.5, backoff=2, max_delay=60)
     def scrape_submissions(self):
         for entry in self.client.subreddit('all').stream.submissions():
             if entry.selftext:
                 self._process_entry(entry)
 
-    @retry(delay=0.5, backoff=2)
+    @retry(delay=0.5, backoff=2, max_delay=60)
     def scrape_comments(self):
         for entry in self.client.subreddit('all').stream.comments():
             self._process_entry(entry)

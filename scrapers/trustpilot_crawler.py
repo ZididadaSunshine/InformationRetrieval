@@ -45,7 +45,7 @@ class TrustPilotCrawler:
                                      name='Trustpilot Crawler')
         self.crawler_thread.start()
 
-    @retry(delay=0.5, backoff=2)
+    @retry(delay=0.5, backoff=2, max_delay=60)
     def _threaded_crawl(self, queue, verbose=False):
         while True:
             # Get the next synonym dict in the queue

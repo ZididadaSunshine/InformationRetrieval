@@ -78,7 +78,7 @@ class Scheduler:
     def run(self):
         self.schedule_thread.start()
 
-    @retry(delay=0.5, backoff=2)
+    @retry(delay=0.5, backoff=2, max_delay=60)
     def _threaded_schedule(self):
         while True:
             if not self.continue_schedule:
