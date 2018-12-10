@@ -86,9 +86,11 @@ class Scheduler:
                 return
 
             # Retrieve active synonyms from gateway
+            logger.info('Updating synonyms')
             self.update_synonyms(self.fetch_all_synonyms().keys())
 
             # Get and commit new posts
+
             self.commit_reviews(self.retrieve_posts())
 
             # Get and update sentiments for new posts
@@ -243,6 +245,7 @@ class Scheduler:
                         traceback.print_exc()
 
                         return None
+
                 statistics[split['sentiment_category']] = {"keywords": keywords, "posts": num_posts}
         else:
             return None
@@ -263,7 +266,7 @@ class Scheduler:
             return
 
         self.all_synonyms = self.all_synonyms.union(synonyms)
-        logger.info("All_synonyms updated")
+        logger.info("All synonyms updated")
 
         # Update scraper synonyms
         self.reddit.use_synonyms(self.all_synonyms)

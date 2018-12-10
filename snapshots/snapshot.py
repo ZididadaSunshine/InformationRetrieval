@@ -5,7 +5,7 @@ import requests
 
 
 class Snapshot:
-    ISO_FORMAT = '%Y-%m-%dT%H:%M:%S'
+    ISO_FORMAT = '%Y-%m-%dT%H:%M:%S.%fZ'
     VALID_STATUS_CODES = {}
 
     def __init__(self, spans_from, spans_to, statistics, sentiment, synonym):
