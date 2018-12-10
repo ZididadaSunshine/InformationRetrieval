@@ -1,12 +1,13 @@
 import datetime
-import re
+import os
 import string
 from threading import Thread
+
 import praw
-import os
 from KeywordExtraction.preprocessing.text_preprocessing import get_processed_text
 from bs4 import BeautifulSoup
 from praw.models import Submission
+from retry import retry
 
 
 class RedditScraper:
@@ -15,11 +16,12 @@ class RedditScraper:
     def __init__(self):
         self.synonyms = {}
         self.buffer = []
-        self.comments_thread = Thread(target=self.scrape_comments, daemon=True)
-        self.submissions_thread = Thread(target=self.scrape_submissions, daemon=True)
+        self.comments_thread = Thread(target=self.scrape_comments, name='Reddit Comment Scraper')
+        self.submissions_thread = Thread(target=self.scrape_submissions, name='Reddit Submission Scraper')
 
         # Initialize reddit client
-        self.client = praw.Reddit(client_id=os.environ["REDDIT_CLIENT_ID"], client_secret=os.environ["REDDIT_CLIENT_SECRET"],
+        self.client = praw.Reddit(client_id=os.environ["REDDIT_CLIENT_ID"],
+                                  client_secret=os.environ["REDDIT_CLIENT_SECRET"],
                                   user_agent='Zididada Sunshine')
 
     def _remove_punctuation(self, text):
@@ -67,15 +69,13 @@ class RedditScraper:
         self.buffer.clear()
         return temp
 
-    def get_latest_guaranteed_time(self):
-        # TODO: return time before which we guarantee all posts have been retrieved.
-        pass
-
+    @retry(delay=0.5, backoff=2, max_delay=60)
     def scrape_submissions(self):
         for entry in self.client.subreddit('all').stream.submissions():
             if entry.selftext:
                 self._process_entry(entry)
 
+    @retry(delay=0.5, backoff=2, max_delay=60)
     def scrape_comments(self):
         for entry in self.client.subreddit('all').stream.comments():
             self._process_entry(entry)

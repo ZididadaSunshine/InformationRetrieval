@@ -1,15 +1,15 @@
 import time
 import traceback
 from datetime import datetime
-from queue import Queue
 from threading import Thread
 from time import sleep
 from urllib.request import urlopen
-from util.orderedsetqueue import OrderedSetQueue, UrlQueue
+
 from KeywordExtraction.preprocessing.text_preprocessing import get_processed_text
-
 from bs4 import BeautifulSoup as bs
+from retry import retry
 
+from util.orderedsetqueue import OrderedSetQueue, UrlQueue
 
 
 class TrustPilotCrawler:
@@ -35,93 +35,107 @@ class TrustPilotCrawler:
         self.crawled_data = {}
         self.synonyms = set()
         self.seen_reviews = {}
-        self.crawler_thread = Thread()
+        self.crawler_thread = None
 
     def begin_crawl(self, synonyms=None, verbose=False):
         if synonyms is not None:
-            self.add_synonyms(synonyms)
+            self.use_synonyms(synonyms, verbose)
 
-        self.crawler_thread = Thread(target=self._threaded_crawl, args=[self.synonym_queue, verbose], daemon=True)
+        self.crawler_thread = Thread(target=self._threaded_crawl, args=[self.synonym_queue, verbose],
+                                     name='Trustpilot Crawler')
         self.crawler_thread.start()
 
+    @retry(delay=0.5, backoff=2, max_delay=60)
     def _threaded_crawl(self, queue, verbose=False):
         while True:
-            try:
-                # Get the next synonym dict in the queue
-                synonym_urls = queue.get()
-                # Pop the first link in the URL queue
-                url_queue = self._get_url_queue_from_synonym(synonym_urls)
-                synonym = self._get_synonym_from_synonym_dict(synonym_urls)
+            # Get the next synonym dict in the queue
+            url_queue = queue.get()
+            if verbose:
+                print(f"TrustPilotCrawler._threaded_crawl: {url_queue.tag()} retrieved from synonym_queue")
 
-                if url_queue.empty():
-                    # The queue should be restarted from the initial Trustpilot search.
-                    self.add_synonym(synonym)
-                    # Skip the rest of this loop
-                    continue
+            # Get the synonym of the URL queue
+            synonym = url_queue.tag()
 
-                url = url_queue.get()
-                # Get reviews from this URL
-                if verbose:
-                    print(f'Processing: {url}')
-                    print(f'Currently looking at synonyms: {self.synonyms}')
-                    print('-------------------------------------------------------------------------------------')
+            if url_queue.empty():
+                # The queue should be restarted from the initial Trustpilot search.
+                self.synonym_queue.put(self._get_url_queue(synonym))
+                # Skip the rest of this loop
+                continue
 
-                reviews, next_page = self._get_reviews_from_url(review_page_url=url)
-                # Store the extracted reviews
-                for review in reviews:
-                    self._process_entry(synonym, review)
+            url = url_queue.get()
+            # Get reviews from this URL
+            if verbose:
+                print(f'Processing: {url}')
+                print(f'Currently looking at synonyms: {self.synonyms}')
+                print('-------------------------------------------------------------------------------------')
 
-                # Requeue the synonym dict
-                if next_page is not None:
-                    url_queue.put(next_page)
+            reviews, next_page = self._get_reviews_from_url(review_page_url=url)
+            # Store the extracted reviews
+            for review in reviews:
+                self._process_entry(synonym, review)
 
-                queue.put(synonym_urls)
-                # TODO: Check for scheduled data dump
-                # TODO: Dump data in local database every once in a while.
-                #       Allow the database to be accessed from anywhere.
+            # Requeue the synonym dict
+            if next_page is not None:
+                url_queue.put(next_page)
 
-            except Exception as e:
-                print(f'Exception encountered in crawling thread: {e}')
-                traceback.print_exc()
-                return
+            queue.put(url_queue)
+            # TODO: Dump data in local database every once in a while.
+            # Allow the database to be accessed from anywhere.
 
-    def use_synonyms(self, synonyms):
+    def use_synonyms(self, synonyms, verbose=False):
+        if verbose:
+            print(f"TrustPilotCrawler.use_synonyms: {len(synonyms)} synonyms retreived")
+        new = set(synonyms) - self.synonyms
+        url_queues = [self._get_url_queue(synonym) for synonym in new]
+        if verbose:
+            print(f"TrustPilotCrawler.use_synonyms: {len(url_queues)} url_queues retreived")
+            for url_queue in url_queues:
+                print(f"TrustPilotCrawler.use_synonyms: {url_queue.tag()}")
         self.synonyms = synonyms
-        urlqueues = [self._geturlqueue(synonym) for synonym in self.synonyms]
-        self._updatesynonymqueue(urlqueues)
+        self._update_synonym_queue(url_queues)
 
-    def _geturlqueue(self, synonym):
+    def add_synonym(self, synonym):
+        self.add_synonyms([synonym])
+
+    def add_synonyms(self, synonyms):
+        self.use_synonyms(list(self.synonyms.union(synonyms)))
+
+    def _get_url_queue(self, synonym):
         """
         Adds a synonym to the list of tracked synonyms.
         Performs a Trustpilot search for the synonym.
         All query result links are stored in the synonym's queue,
         both of which are added to the synonym queue.
         """
+        url_queue = UrlQueue(synonym)
         review_pages = self._get_synonym_review_pages(synonym)
+
         if len(review_pages) == 0:
-            pass  # Maybe handle this in another way?
+            return url_queue
 
         # Enqueue all pages for this synonym
-        url_queue = UrlQueue(synonym)
         for page in review_pages:
             url_queue.put(page)
         return url_queue
 
-    def _updatesynonymqueue(self, urlqueues):
+    def _update_synonym_queue(self, newurlqueues):
         """
-        :param urlqueues:
+        :param newurlqueues:
         [
             UrlQueue
         ]
         """
-        urlqueuedict = {uq.tag(): uq for uq in urlqueues}
+        # Add new synonym urlqueues to synonym_queue
+        for url_queue in newurlqueues:
+            self.synonym_queue.put(url_queue)
+
+        # Filter the unused synonym urlqueues from synonym_queue
         self.synonym_queue.put(None)
-        urlqueue = self.synonym_queue.get()
-        while urlqueue is not None:
-            new = urlqueuedict.get(urlqueue.tag())
-            if new is not None:
-                self.synonym_queue.put(new)
-            urlqueue = self.synonym_queue.get()
+        url_queue = self.synonym_queue.get()
+        while url_queue is not None:
+            if url_queue.tag() in self.synonyms:
+                self.synonym_queue.put(url_queue)
+            url_queue = self.synonym_queue.get()
 
     def can_ping_yet(self):
         now = time.time()
@@ -151,24 +165,6 @@ class TrustPilotCrawler:
 
         return '|' in link_text and (synonym == link_text.split('|')[0].lower().strip())
 
-    def _get_next_synonym(self):
-        """
-        Returns the next {synonym : Queue(URL)} dict in the queue.
-        """
-        return self.synonym_queue.get()
-
-    def _get_url_queue_from_synonym(self, synonym_dict):
-        """
-        Given a {synonym : Queue(URL)} dict, returns the Queue for the synonym.
-        """
-        return list(synonym_dict.values())[0]
-
-    def _get_synonym_from_synonym_dict(self, synonym_dict):
-        """
-        Given a {synonym : Queue(URL)} dict, returns the synonym.
-        """
-        return list(synonym_dict.keys())[0]
-
     def _get_souped_page(self, url):
         """
         Gets the webpage pointed to by the URL as a parsed
@@ -185,7 +181,7 @@ class TrustPilotCrawler:
 
         # Reset timer before returning the souped page
         self.host_timer = time.time()
-        return bs(page)
+        return bs(page, features='lxml')
 
     def _get_reviews_from_url(self, review_page_url):
         """
@@ -205,20 +201,18 @@ class TrustPilotCrawler:
 
         next_page = self._get_next_page(soup)
 
-        return [
-                   {
-                       'title': review.find('h2', {'class', 'review-info__body__title'}).get_text().strip(),
-                       'body': review.find('p', {'class', 'review-info__body__text'}).get_text().strip(),
-                       'date': self._get_date(review),
-                       'user': user.strip(),
-                       'review_count': review_count
-                   }
-                   for (review, (user, review_count)) in zip(reviews, users_review_counts)], next_page
+        return [{'title': review.find('h2', {'class', 'review-info__body__title'}).get_text().strip(),
+                 'body': review.find('p', {'class', 'review-info__body__text'}).get_text().strip(),
+                 'date': self._get_date(review),
+                 'user': user.strip(),
+                 'review_count': review_count
+                 } for (review, (user, review_count)) in zip(reviews, users_review_counts)], next_page
 
     def _get_next_page(self, souped_review_page):
         next_page = souped_review_page.find('a', {'class', 'pagination-page next-page'}, href=True)
         if not next_page:
             return None
+
         return f'https://www.trustpilot.com{next_page["href"]}'
 
     def _get_date(self, review):

@@ -1,35 +1,35 @@
-from queue import Queue
-from threading import Thread
+import json
+import logging
 import os
+import traceback
 from datetime import datetime
 from datetime import timedelta
-import time
-from time import sleep
-import requests
-import json
 from statistics import mean
+from threading import Thread
+from time import sleep
+
+import requests
+from retry import retry
 
 from dbhandler import DBHandler
-from scrapers.trustpilot_crawler import TrustPilotCrawler
 from scrapers.reddit_scraper import RedditScraper
+from scrapers.trustpilot_crawler import TrustPilotCrawler
 from snapshots.snapshot import Snapshot
 
 
 class Scheduler:
 
-    def __init__(self, debug_level):
+    def __init__(self):
         self.continue_schedule = False
 
-        # TODO: Set up DB handlers
-        self.main_db = None
         self.local_db = DBHandler()
 
-        # TODO: Load synonyms from gateway DB and put them in the queue
-        self.synonym_queue = Queue()
         self.all_synonyms = set()
 
         self.trustpilot = TrustPilotCrawler()
         self.reddit = RedditScraper()
+
+        self.scrapers = {'trustpilot': TrustPilotCrawler(), 'reddit': RedditScraper()}
 
         # TODO: Make Environment Variables for API info
         self.kwe_api = f'http://{os.environ["KWE_API_HOST"]}/'
@@ -43,12 +43,11 @@ class Scheduler:
                                      {'category': 'negative', 'upper_limit': 0.5, 'lower_limit': 0}]
 
         self.kwe_interval = timedelta(hours=1)
-        self.kwe_latest = datetime(2018, 12, 4, 12)
-        self.snapshot_buffer = []
+        self.kwe_latest = datetime(2018, 12, 4, 8)
 
         self.continue_schedule = True
         self.schedule_thread = Thread()
-        self.debug = debug_level
+        self.crawler_schedule_thread = Thread()
         self.begin_schedule()
 
     def begin_schedule(self):
@@ -67,80 +66,65 @@ class Scheduler:
         # Conduct KWE for all texts with the same sentiment.
         # In the main database, save the top-5-keywords with a relation
         # to both the synonym and their sentiment.
+        """
+        for scraper in self.scrapers.keys():
+            self.scrapers[scraper].begin_crawl()
+        """
         self.reddit.begin_crawl()
         self.trustpilot.begin_crawl()
+
         self.continue_schedule = True
-        self.schedule_thread = Thread(target=self._threaded_schedule)
+        self.schedule_thread = Thread(target=self._threaded_schedule, name='Scheduler')
+
+    def run(self):
         self.schedule_thread.start()
 
+    @retry(delay=0.5, backoff=2, max_delay=60)
     def _threaded_schedule(self):
         while True:
             if not self.continue_schedule:
                 return
 
-            # get synonyms
-            synonyms = self.fetch_all_synonyms()
+            # Retrieve active synonyms from gateway
+            self.update_synonyms(self.fetch_all_synonyms().keys())
 
-            if self.debug > 0:
-                print(f'{len(synonyms)} synonyms retrieved from gateway')
-                if self.debug > 1:
-                    for s in synonyms.keys():
-                        print(s)
+            # Get and commit new posts
+            self.commit_reviews(self.retrieve_posts())
 
-            synonym_keys = synonyms.keys()
-            self.add_synonyms(synonym_keys)
-            if self.debug > 0:
-                print('synonyms updated')
-
-            # get and commit new reviews
-            new_posts = self.retrieve_posts()
-            if self.debug > 0:
-                print(f'{len(new_posts["trustpilot"]) + len(new_posts["reddit"])} posts retrieved from crawlers')
-                if self.debug > 1:
-                    print('Trustpilot posts:')
-                    for i in new_posts['trustpilot']:
-                        print(i)
-                    print('Reddit posts:')
-                    for i in new_posts['reddit']:
-                        print(i)
-
-            self.commit_reviews(new_posts)
-            if self.debug > 0:
-                print('posts committed to DB')
-
-            # TODO: Analyse sentiment for all reviews and store result in local database.
+            # Get and update sentiments for new posts
             posts = self.fetch_new_posts()
-            if self.debug > 0:
-                print(f'{len(posts)} posts retrieved from DB')
+            logger.info(f'{len(posts)} new posts fetched')
+            if posts:
+                sentiments = self.calculate_sentiments(posts)
+                try:
+                    self.local_db.update_sentiments(sentiments)
+                except Exception as e:
+                    print(f'Scheduler._threaded_schedule: Exception encountered with local_db.update_sentiments: {e}')
+                    traceback.print_exc()
+                    # TODO: Handle local_db.update_sentiments exceptions
 
-            if len(posts) > 0:
-                sent = self.calculate_sentiment(posts)
-                if self.debug > 0:
-                    print(f'{len(sent)} sentiments calculated')
-                    if self.debug > 1:
-                        for item in sent:
-                            print(f'Id: {item["id"]}, Sentiment: {item["sentiment"]}')
+            # Perform keyword extraction and save snapshots from current interval
+            if datetime.utcnow() > self.kwe_latest + (2 * self.kwe_interval):
+                logger.info(f'Current snapshot date: {self.kwe_latest}')
 
-                self.local_db.update_sentiments(sent)
-                if self.debug > 0:
-                    print('sentiments committed to db')
-
-            if datetime.now() > self.kwe_latest + (2 * self.kwe_interval):
                 for synonym in self.all_synonyms:
-                    snapshot = self.create_snapshot(synonym, self.kwe_latest, self.kwe_latest+self.kwe_interval)
-                    self.snapshot_buffer.append(snapshot)
+                    snapshot = self.create_snapshot(synonym, self.kwe_latest, self.kwe_latest + self.kwe_interval)
+
+                    if snapshot:
+                        snapshot.save_remotely()
+
                 self.kwe_latest += self.kwe_interval
             else:
                 sleep(10)
 
-    def calculate_sentiment(self, posts):
-        '''
+    def calculate_sentiments(self, posts):
+        """
         :param posts:
         {
             id        : integer,
             text      : string,
         }
-        '''
+        """
         # Extract the post contents
         id_list = []
         content_list = []
@@ -149,11 +133,17 @@ class Scheduler:
             content_list.append(content)
 
         # Call the SentimentAnalysis API
-        predictions = json.loads(requests.post(self.sa_api, json=dict(data=content_list)).text)
+        try:
+            predictions = json.loads(requests.post(self.sa_api, json=dict(data=content_list)).text)
+        except Exception as e:
+            print(f'Scheduler.calculate_sentiments: Exception encountered with SA API: {e}')
+            traceback.print_exc()
+            # TODO: Handle SA API exceptions
+            return []
 
         # Combine predictions with posts
-        results = [{'id': id_list[i], 'sentiment': predictions['predictions'][i]}
-                   for i in range(0, len(predictions['predictions']))]
+        results = [{'id': id_list[i],
+                    'sentiment': predictions['predictions'][i]} for i in range(0, len(predictions['predictions']))]
 
         return results
 
@@ -162,8 +152,10 @@ class Scheduler:
 
     def retrieve_posts(self):
         # Get posts from each scraper
-        return {'trustpilot': self.trustpilot.get_buffer_contents(),
-                'reddit': self.reddit.get_buffer_contents()}
+        reddit_buffer = self.reddit.get_buffer_contents()
+        trustpilot_buffer = self.trustpilot.get_buffer_contents()
+
+        return {'trustpilot': trustpilot_buffer, 'reddit': reddit_buffer}
 
     def commit_reviews(self, reviews):
         # Get reviews from each crawler
@@ -171,16 +163,32 @@ class Scheduler:
         reddit_reviews = reviews['reddit']
 
         # Commit reviews to the database
-        for review in tp_reviews:
-            self.local_db.commit_trustpilot(identifier=review['id'], synonym=review['synonym'],
-                                            contents=review['text'], user=review['author'], date=review['date'],
-                                            num_user_ratings=review['num_ratings'])
-        for review in reddit_reviews:
-            self.local_db.commit_reddit(unique_id=review['id'], synonyms=review['synonyms'], text=review['text'],
-                                        author=review['author'], date=review['date'], subreddit=review['subreddit'])
+        try:
+            for review in tp_reviews:
+                self.local_db.commit_trustpilot(identifier=review['id'], synonym=review['synonym'],
+                                                contents=review['text'], user=review['author'], date=review['date'],
+                                                num_user_ratings=review['num_ratings'])
+        except Exception as e:
+            print(f'Scheduler.commit_reviews: Exception encountered while commiting trustpilot posts to database: {e}')
+            traceback.print_exc()
+            # TODO: Handle [db_handler].commit_trustpilot exceptions
+
+        try:
+            for review in reddit_reviews:
+                self.local_db.commit_reddit(unique_id=review['id'], synonyms=review['synonyms'], text=review['text'],
+                                            author=review['author'], date=review['date'], subreddit=review['subreddit'])
+        except Exception as e:
+            print(f'Scheduler.commit_reviews: Exception encountered while commiting reddit posts to database: {e}')
+            traceback.print_exc()
+            # TODO: Handle [db_handler].commit_reddit exceptions
 
     def fetch_all_synonyms(self):
-        return requests.get(self.synonym_api, headers=self.synonym_api_key).json()
+        try:
+            synonyms = requests.get(self.synonym_api, headers=self.synonym_api_key).json()
+            return synonyms
+        except Exception as e:
+            print(f'Scheduler.fetch_all_synonyms: Exception encountered with synonym api: {e}')
+            return {synonym: -1 for synonym in self.all_synonyms}
 
     def fetch_new_posts(self, synonym=None, with_sentiment=False):
         """
@@ -189,11 +197,14 @@ class Scheduler:
         :param synonym : string
         :param with_sentiment : boolean - if set to false, only returns rows where sentiment = NULL.
         """
-        return self.local_db.get_new_posts(synonym, with_sentiment)
-
-    def _debug(self, message, level):
-        if self.debug >= level:
-            print(message)
+        try:
+            posts = self.local_db.get_new_posts(synonym, with_sentiment)
+            return posts
+        except Exception as e:
+            logger.error(f'Exception encountered while retrieving posts from database: {e}')
+            traceback.print_exc()
+            # TODO: Handle [db_handler].get_new_posts exceptions
+            return {}
 
     def create_snapshot(self, synonym, from_time=datetime.min, to_time=datetime.now()):
         """
@@ -202,9 +213,13 @@ class Scheduler:
         :param to_time: datetime
         """
         statistics = dict()
-        posts = self.local_db.get_kwe_posts(synonym, from_time, to_time)
-
-        self._debug(f'{len(posts)} retrieved for synonym \'{synonym}\'', 1)
+        posts = list()
+        try:
+            posts = self.local_db.get_kwe_posts(synonym, from_time, to_time)
+        except Exception as e:
+            print(f'Scheduler.create_snapshot: Exception encountered while retrieving posts from database: {e}')
+            traceback.print_exc()
+            # TODO: Handle [db_handler].get_kwe_posts exception
 
         if posts:
             avg_sentiment = mean([p["sentiment"] for p in posts])
@@ -212,49 +227,61 @@ class Scheduler:
                        "posts": [p["content"] for p in posts if sc["upper_limit"] >= p["sentiment"] >= sc["lower_limit"]]}
                       for sc in self.sentiment_categories]
 
-            if self.debug > 0:
-                print(f"{synonym} posts split into {len(splits)} sentiment categories")
-
+            # For each split of posts, compute keywords and number of posts
             for split in splits:
-                keywords = {}
+                keywords = []
                 num_posts = len(split["posts"])
 
                 # Only requests keywords if there are posts
                 if num_posts:
-                    keywords = requests.post(self.kwe_api, json=dict(posts=split["posts"]),
-                                             headers=self.kwe_api_key).json()
+                    try:
+                        response = requests.post(self.kwe_api, json=dict(posts=split["posts"]),
+                                                 headers=self.kwe_api_key).json()
+                        keywords = response.get('keywords', [])
+                    except Exception as e:
+                        print(f'Scheduler.create_snapshot: Exception encountered with KWE API: {e}')
+                        traceback.print_exc()
 
-                statistics[split['sentiment_category']] = {"keywords": keywords, "num_posts": len(split)}
+                        return None
+                statistics[split['sentiment_category']] = {"keywords": keywords, "posts": num_posts}
         else:
             return None
 
         return Snapshot(spans_from=from_time, spans_to=to_time, sentiment=avg_sentiment, synonym=synonym,
                         statistics=statistics)
 
-    def commit_keywords_with_sentiment(self, keywords):
-        '''
-        :param keywords:
-        {
-            date      : UTC datetime object,
-            keywords  : string[5],
-            sentiment : boolean
-        }
-        '''
-        # TODO: Commit keywords w. sentiment to stable storage on main database.
-        pass
+    def update_synonyms(self, synonyms):
+        if set(synonyms) == self.all_synonyms:
+            return
 
-    def add_synonyms(self, synonyms):
-        for synonym in synonyms:
-            self.add_synonym(synonym)
+        try:
+            self.local_db.commit_synonyms(synonyms)
+        except Exception as e:
+            print(f'Scheduler.update_synonyms: Exception encountered while commiting synonyms to database: {e}')
+            traceback.print_exc()
+            # TODO: Handle [db_handler].commit_synonyms exceptions
+            return
+
+        self.all_synonyms = self.all_synonyms.union(synonyms)
+        logger.info("All_synonyms updated")
+
+        # Update scraper synonyms
+        self.reddit.use_synonyms(self.all_synonyms)
+        self.trustpilot.use_synonyms(self.all_synonyms)
 
     def add_synonym(self, synonym):
-        self.local_db.commit_synonyms([synonym])
-        self.synonym_queue.put(synonym)
-        self.all_synonyms.add(synonym)
-        #self.trustpilot.add_synonym(synonym)
-        self.reddit.use_synonyms(self.all_synonyms)
+        self.add_synonyms([synonym])
 
+    def add_synonyms(self, synonyms):
+        self.update_synonyms(list(self.all_synonyms.union(synonyms)))
+
+
+logging.basicConfig()
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
 
 if __name__ == '__main__':
-    s = Scheduler(3)
-    print('Scheduler initialized')
+    retry.logging_logger = logger
+
+    scheduler = Scheduler()
+    scheduler.run()

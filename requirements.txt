@@ -2,3 +2,4 @@ requests
 praw
 sqlalchemy
 https://github.com/ZididadaSunshine/KeywordExtraction/tarball/master
+retry
