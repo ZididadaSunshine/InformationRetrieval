@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import traceback
 from datetime import datetime
@@ -92,7 +93,7 @@ class Scheduler:
 
             # Get and update sentiments for new posts
             posts = self.fetch_new_posts()
-            print(f'{len(posts)} posts fetched')
+            logger.info(f'{len(posts)} new posts fetched')
             if posts:
                 sentiments = self.calculate_sentiments(posts)
                 try:
@@ -104,7 +105,7 @@ class Scheduler:
 
             # Perform keyword extraction and save snapshots from current interval
             if datetime.utcnow() > self.kwe_latest + (2 * self.kwe_interval):
-                print(f'Current snapshot date: {self.kwe_latest}')
+                logger.info(f'Current snapshot date: {self.kwe_latest}')
 
                 for synonym in self.all_synonyms:
                     snapshot = self.create_snapshot(synonym, self.kwe_latest, self.kwe_latest + self.kwe_interval)
@@ -200,7 +201,7 @@ class Scheduler:
             posts = self.local_db.get_new_posts(synonym, with_sentiment)
             return posts
         except Exception as e:
-            print(f'Scheduler.fetch_new_posts: Exception encountered while retrieving posts from database: {e}')
+            logger.error(f'Exception encountered while retrieving posts from database: {e}')
             traceback.print_exc()
             # TODO: Handle [db_handler].get_new_posts exceptions
             return {}
@@ -262,7 +263,7 @@ class Scheduler:
             return
 
         self.all_synonyms = self.all_synonyms.union(synonyms)
-        print("Scheduler.add_synonyms : all_synonyms updated")
+        logger.info("All_synonyms updated")
 
         # Update scraper synonyms
         self.reddit.use_synonyms(self.all_synonyms)
@@ -275,6 +276,12 @@ class Scheduler:
         self.update_synonyms(list(self.all_synonyms.union(synonyms)))
 
 
+logging.basicConfig()
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
 if __name__ == '__main__':
+    retry.logging_logger = logger
+
     scheduler = Scheduler()
     scheduler.run()

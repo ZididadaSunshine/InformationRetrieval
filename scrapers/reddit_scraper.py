@@ -1,9 +1,7 @@
 import datetime
 import os
 import string
-import traceback
 from threading import Thread
-from time import sleep
 
 import praw
 from KeywordExtraction.preprocessing.text_preprocessing import get_processed_text
