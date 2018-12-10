@@ -211,14 +211,13 @@ class Scheduler:
             traceback.print_exc()
             # TODO: Handle [db_handler].commit_reddit exceptions
 
-
     def fetch_all_synonyms(self):
         try:
             synonyms = requests.get(self.synonym_api, headers=self.synonym_api_key).json()
             return synonyms
         except Exception as e:
             print(f'Scheduler.fetch_all_synonyms: Exception encountered with synonym api: {e}')
-            return self.all_synonyms
+            return {synonym: -1 for synonym in self.all_synonyms}
 
     def fetch_new_posts(self, synonym=None, with_sentiment=False):
         """
