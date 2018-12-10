@@ -1,18 +1,18 @@
-from queue import Queue
-from threading import Thread
+import json
 import os
+import traceback
 from datetime import datetime
 from datetime import timedelta
-import time
-import traceback
-from time import sleep
-import requests
-import json
 from statistics import mean
+from threading import Thread
+from time import sleep
+
+import requests
+from retry import retry
 
 from dbhandler import DBHandler
-from scrapers.trustpilot_crawler import TrustPilotCrawler
 from scrapers.reddit_scraper import RedditScraper
+from scrapers.trustpilot_crawler import TrustPilotCrawler
 from snapshots.snapshot import Snapshot
 
 
@@ -73,10 +73,12 @@ class Scheduler:
         self.trustpilot.begin_crawl()
 
         self.continue_schedule = True
-        self.schedule_thread = Thread(target=self._threaded_schedule)
+        self.schedule_thread = Thread(target=self._threaded_schedule, name='Scheduler')
+
+    def run(self):
         self.schedule_thread.start()
 
-
+    @retry(delay=0.5, backoff=2)
     def _threaded_schedule(self):
         while True:
             if not self.continue_schedule:
@@ -100,13 +102,12 @@ class Scheduler:
                     traceback.print_exc()
                     # TODO: Handle local_db.update_sentiments exceptions
 
-
             # Perform keyword extraction and save snapshots from current interval
             if datetime.utcnow() > self.kwe_latest + (2 * self.kwe_interval):
                 print(f'Current snapshot date: {self.kwe_latest}')
 
                 for synonym in self.all_synonyms:
-                    snapshot = self.create_snapshot(synonym, self.kwe_latest, self.kwe_latest+self.kwe_interval)
+                    snapshot = self.create_snapshot(synonym, self.kwe_latest, self.kwe_latest + self.kwe_interval)
 
                     if snapshot:
                         snapshot.save_remotely()
@@ -140,8 +141,8 @@ class Scheduler:
             return []
 
         # Combine predictions with posts
-        results = [{'id': id_list[i], 'sentiment': predictions['predictions'][i]}
-                   for i in range(0, len(predictions['predictions']))]
+        results = [{'id': id_list[i],
+                    'sentiment': predictions['predictions'][i]} for i in range(0, len(predictions['predictions']))]
 
         return results
 
@@ -150,41 +151,10 @@ class Scheduler:
 
     def retrieve_posts(self):
         # Get posts from each scraper
-        r = []
-        tp = []
-        try:
-            r = self.reddit.get_buffer_contents()
-        except Exception as e:
-            print(f'Scheduler.retrieve_posts: Exception encountered while retrieving posts from reddit: {e}')
-            # Initialize and begin a new crawler
-            self.reddit = RedditScraper()
-            self.reddit.use_synonyms(self.all_synonyms)
-            self.reddit.begin_crawl()
-        try:
-            tp = self.trustpilot.get_buffer_contents()
-        except Exception as e:
-            print(f'Scheduler.retrieve_posts: Exception encountered while retrieving posts from trustpilot: {e}')
-            # Initialize and begin a new crawler
-            self.trustpilot = TrustPilotCrawler()
-            self.trustpilot.use_synonyms(self.all_synonyms)
-            self.trustpilot.begin_crawl()
+        reddit_buffer = self.reddit.get_buffer_contents()
+        trustpilot_buffer = self.trustpilot.get_buffer_contents()
 
-        """
-        for scraper in self.scrapers.items():
-            try:
-                result[scraper[0]] = self.scrapers[scraper[0]].get_buffer_contents()
-            except Exception as e:
-                print(f'Scheduler.retrieve_posts: Exception encountered while retrieving posts from {scraper[0]} crawler: {e}')
-                traceback.print_exc()
-                # TODO: Handle [crawler].get_buffer_contents exceptions
-        print(f'scheduler.retrieve_posts: retrieved {result}')
-        return result
-        """
-
-        result = {'trustpilot': tp,
-                'reddit': r}
-        print(f'retrieved: {len(result["trustpilot"])} trustpilot posts, {len(result["reddit"])} reddit posts')
-        return result
+        return {'trustpilot': trustpilot_buffer, 'reddit': reddit_buffer}
 
     def commit_reviews(self, reviews):
         # Get reviews from each crawler
@@ -235,7 +205,6 @@ class Scheduler:
             # TODO: Handle [db_handler].get_new_posts exceptions
             return {}
 
-
     def create_snapshot(self, synonym, from_time=datetime.min, to_time=datetime.now()):
         """
         :param synonym: string
@@ -243,6 +212,7 @@ class Scheduler:
         :param to_time: datetime
         """
         statistics = dict()
+        posts = list()
         try:
             posts = self.local_db.get_kwe_posts(synonym, from_time, to_time)
         except Exception as e:
@@ -270,8 +240,8 @@ class Scheduler:
                     except Exception as e:
                         print(f'Scheduler.create_snapshot: Exception encountered with KWE API: {e}')
                         traceback.print_exc()
-                        # TODO: Handle KWE API exception
 
+                        return None
                 statistics[split['sentiment_category']] = {"keywords": keywords, "posts": num_posts}
         else:
             return None
@@ -294,24 +264,9 @@ class Scheduler:
         self.all_synonyms = self.all_synonyms.union(synonyms)
         print("Scheduler.add_synonyms : all_synonyms updated")
 
-        try:
-            self.reddit.use_synonyms(self.all_synonyms)
-            print("Scheduler.add_synonyms : reddit synonyms updated")
-        except Exception as e:
-            print(f'Scheduler.update_synonyms: Exception encountered while updating crawler synonyms: {e}')
-            # Initialize and begin a new crawler
-            self.reddit = RedditScraper()
-            self.reddit.use_synonyms(self.all_synonyms)
-            self.reddit.begin_crawl()
-        try:
-            self.trustpilot.use_synonyms(self.all_synonyms)
-            print("Scheduler.add_synonyms : trustpilot synonyms updated")
-        except Exception as e:
-            print(f'Scheduler.update_synonyms: Exception encountered while updating crawler synonyms: {e}')
-            # Initialize and begin a new crawler
-            self.trustpilot = TrustPilotCrawler()
-            self.trustpilot.use_synonyms(self.all_synonyms)
-            self.trustpilot.begin_crawl()
+        # Update scraper synonyms
+        self.reddit.use_synonyms(self.all_synonyms)
+        self.trustpilot.use_synonyms(self.all_synonyms)
 
     def add_synonym(self, synonym):
         self.add_synonyms([synonym])
@@ -319,6 +274,7 @@ class Scheduler:
     def add_synonyms(self, synonyms):
         self.update_synonyms(list(self.all_synonyms.union(synonyms)))
 
+
 if __name__ == '__main__':
-    s = Scheduler()
-    print('Scheduler initialized')
+    scheduler = Scheduler()
+    scheduler.run()
