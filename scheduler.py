@@ -117,8 +117,8 @@ class Scheduler:
                 logger.info(f'Current snapshot date: {self.kwe_latest}')
 
                 jobs = []
-                for synonym in self.all_synonyms:
-                    with ThreadPoolExecutor(max_workers=10) as executor:
+                with ThreadPoolExecutor(max_workers=30) as executor:
+                    for synonym in self.all_synonyms:
                         jobs.append(executor.submit(self._save_snapshot, synonym, self.kwe_latest,
                                                     self.kwe_latest + self.kwe_interval))
 
