@@ -1,11 +1,9 @@
+import datetime
 import hashlib
 
-from database import Synonym, Post, SynonymPostAssociation, TrustpilotPost, session_scope, RedditPost
-from sqlalchemy.sql import text
 from sqlalchemy.orm import joinedload
-from sqlalchemy import DateTime
-import datetime
 
+from database import Synonym, Post, SynonymPostAssociation, TrustpilotPost, session_scope, RedditPost
 
 
 class DBHandler:
@@ -30,7 +28,7 @@ class DBHandler:
 
     def commit_trustpilot(self, synonym, contents, date, identifier, num_user_ratings, user, verbose=False):
         """
-        Input: 
+        Input:
                 synonym          : string
                 contents         : string
                 date             : UTC datetime object
@@ -38,7 +36,7 @@ class DBHandler:
                 num_user_ratings : integer
                 verbose          : boolean
 
-        Commits a synonym <-> post relation to the database. 
+        Commits a synonym <-> post relation to the database.
         """
         with session_scope() as session:
             post_id = self.hash_identifier(identifier)
@@ -77,7 +75,7 @@ class DBHandler:
 
     def dump(self, clear_data_after=False, verbose=False):
         """
-        Dumps all stored data for every synonym to the caller. 
+        Dumps all stored data for every synonym to the caller.
         If specified by clear_data_after, clears all tables in the database before returning.
         """
         with session_scope() as session:
@@ -114,6 +112,7 @@ class DBHandler:
                 session.add(Synonym(name=synonym))
 
             session.commit()
+
     def update_sentiments(self, sentiments):
         """
         Updates sentiment for posts.

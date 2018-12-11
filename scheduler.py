@@ -2,6 +2,8 @@ import json
 import logging
 import os
 import traceback
+from concurrent import futures
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from datetime import timedelta
 from statistics import mean
@@ -79,6 +81,12 @@ class Scheduler:
     def run(self):
         self.schedule_thread.start()
 
+    def _save_snapshot(self, synonym, spans_from, spans_to):
+        snapshot = self.create_snapshot(synonym, self.kwe_latest, self.kwe_latest + self.kwe_interval)
+
+        if snapshot:
+            snapshot.save_remotely()
+
     @retry(delay=0.5, backoff=2, max_delay=60)
     def _threaded_schedule(self):
         while True:
@@ -90,7 +98,6 @@ class Scheduler:
             self.update_synonyms(self.fetch_all_synonyms().keys())
 
             # Get and commit new posts
-
             self.commit_reviews(self.retrieve_posts())
 
             # Get and update sentiments for new posts
@@ -109,15 +116,18 @@ class Scheduler:
             if datetime.utcnow() > self.kwe_latest + (2 * self.kwe_interval):
                 logger.info(f'Current snapshot date: {self.kwe_latest}')
 
+                jobs = []
                 for synonym in self.all_synonyms:
-                    snapshot = self.create_snapshot(synonym, self.kwe_latest, self.kwe_latest + self.kwe_interval)
+                    with ThreadPoolExecutor(max_workers=10) as executor:
+                        jobs.append(executor.submit(self._save_snapshot, synonym, self.kwe_latest,
+                                                    self.kwe_latest + self.kwe_interval))
 
-                    if snapshot:
-                        snapshot.save_remotely()
+                futures.wait(jobs)
+                logger.info(f'Finished {len(jobs)} futures')
 
                 self.kwe_latest += self.kwe_interval
             else:
-                sleep(10)
+                sleep(1)
 
     def calculate_sentiments(self, posts):
         """
