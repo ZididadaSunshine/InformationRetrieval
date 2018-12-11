@@ -45,7 +45,7 @@ class Scheduler:
                                      {'category': 'negative', 'upper_limit': 0.5, 'lower_limit': 0}]
 
         self.kwe_interval = timedelta(hours=1)
-        self.kwe_latest = datetime(2018, 12, 10, 21)
+        self.kwe_latest = datetime(2018, 12, 11, 21)
 
         self.continue_schedule = True
         self.schedule_thread = Thread()
@@ -227,6 +227,8 @@ class Scheduler:
         statistics = dict()
         posts = list()
         try:
+            logger.info(f'Retrieving KWE posts for {synonym} in range {from_time} to {to_time}')
+
             posts = self.local_db.get_kwe_posts(synonym, from_time, to_time)
         except Exception as e:
             print(f'Scheduler.create_snapshot: Exception encountered while retrieving posts from database: {e}')
@@ -247,6 +249,8 @@ class Scheduler:
                 # Only requests keywords if there are posts
                 if num_posts:
                     try:
+                        logger.info(f'Performing KWE on posts for {synonym}')
+
                         response = requests.post(self.kwe_api, json=dict(posts=split["posts"]),
                                                  headers=self.kwe_api_key).json()
                         keywords = response.get('keywords', [])
@@ -289,7 +293,7 @@ class Scheduler:
         self.update_synonyms(list(self.all_synonyms.union(synonyms)))
 
 
-logging.basicConfig()
+logging.basicConfig(format='%(asctime)s %(message)s')
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
