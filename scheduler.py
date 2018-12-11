@@ -293,7 +293,7 @@ class Scheduler:
         self.update_synonyms(list(self.all_synonyms.union(synonyms)))
 
 
-logging.basicConfig(format='%(asctime)s %(message)s')
+logging.basicConfig(format='%(asctime)s:%(levelname)s:%(message)s')
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
