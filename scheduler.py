@@ -45,7 +45,7 @@ class Scheduler:
                                      {'category': 'negative', 'upper_limit': 0.5, 'lower_limit': 0}]
 
         self.kwe_interval = timedelta(hours=1)
-        self.kwe_latest = datetime(2018, 12, 11, 21)
+        self.kwe_latest = datetime(2018, 12, 10, 22)
 
         self.continue_schedule = True
         self.schedule_thread = Thread()
