@@ -90,7 +90,6 @@ class Scheduler:
             self.update_synonyms(self.fetch_all_synonyms().keys())
 
             # Get and commit new posts
-
             self.commit_reviews(self.retrieve_posts())
 
             # Get and update sentiments for new posts

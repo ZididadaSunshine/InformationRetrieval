@@ -7,7 +7,6 @@ from sqlalchemy import DateTime
 import datetime
 
 
-
 class DBHandler:
     def __init__(self):
         pass
@@ -114,6 +113,7 @@ class DBHandler:
                 session.add(Synonym(name=synonym))
 
             session.commit()
+
     def update_sentiments(self, sentiments):
         """
         Updates sentiment for posts.

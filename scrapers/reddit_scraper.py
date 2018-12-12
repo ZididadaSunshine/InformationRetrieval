@@ -31,7 +31,7 @@ class RedditScraper:
         self.synonyms = synonyms
 
     def _normalize(self, token):
-        """ Normalize a word by converting it to lowercase and removing puncutation """
+        """ Normalize a word by converting it to lowercase and removing punctuation. """
         return self._remove_punctuation(token).lower()
 
     def _process_entry(self, entry):
@@ -61,8 +61,8 @@ class RedditScraper:
         # Stopwords are not removed yet, as they are needed for sentiment analysis
         body_text = ' '.join(get_processed_text(body_text, no_stopwords=False))
 
-        self.buffer.append({"id": unique_id, "synonyms": matching_synonyms, "text": body_text, "author": author,
-                            "date": date, "subreddit": subreddit})
+        self.buffer.append({'id': unique_id, 'synonyms': matching_synonyms, 'text': body_text, 'author': author,
+                            'date': date, 'subreddit': subreddit})
 
     def get_buffer_contents(self):
         temp = self.buffer.copy()
@@ -83,9 +83,3 @@ class RedditScraper:
     def begin_crawl(self):
         self.comments_thread.start()
         self.submissions_thread.start()
-
-
-if __name__ == "__main__":
-    scraper = RedditScraper()
-    scraper.use_synonyms({'apple', 'elon', 'ea', 'amazon', 'denmark', 'sweden', 'trump'})
-    scraper.scrape_comments()
