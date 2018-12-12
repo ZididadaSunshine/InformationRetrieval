@@ -2,6 +2,8 @@ import json
 import logging
 import os
 import traceback
+from concurrent import futures
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from datetime import timedelta
 from statistics import mean
@@ -43,7 +45,7 @@ class Scheduler:
                                      {'category': 'negative', 'upper_limit': 0.5, 'lower_limit': 0}]
 
         self.kwe_interval = timedelta(hours=1)
-        self.kwe_latest = datetime(2018, 12, 4, 8)
+        self.kwe_latest = datetime(2018, 12, 10, 22)
 
         self.continue_schedule = True
         self.schedule_thread = Thread()
@@ -79,6 +81,12 @@ class Scheduler:
     def run(self):
         self.schedule_thread.start()
 
+    def _save_snapshot(self, synonym, spans_from, spans_to):
+        snapshot = self.create_snapshot(synonym, self.kwe_latest, self.kwe_latest + self.kwe_interval)
+
+        if snapshot:
+            snapshot.save_remotely()
+
     @retry(delay=0.5, backoff=2, max_delay=60)
     def _threaded_schedule(self):
         while True:
@@ -108,15 +116,18 @@ class Scheduler:
             if datetime.utcnow() > self.kwe_latest + (2 * self.kwe_interval):
                 logger.info(f'Current snapshot date: {self.kwe_latest}')
 
-                for synonym in self.all_synonyms:
-                    snapshot = self.create_snapshot(synonym, self.kwe_latest, self.kwe_latest + self.kwe_interval)
+                jobs = []
+                with ThreadPoolExecutor(max_workers=30) as executor:
+                    for synonym in self.all_synonyms:
+                        jobs.append(executor.submit(self._save_snapshot, synonym, self.kwe_latest,
+                                                    self.kwe_latest + self.kwe_interval))
 
-                    if snapshot:
-                        snapshot.save_remotely()
+                futures.wait(jobs)
+                logger.info(f'Finished {len(jobs)} futures')
 
                 self.kwe_latest += self.kwe_interval
             else:
-                sleep(10)
+                sleep(1)
 
     def calculate_sentiments(self, posts):
         """
@@ -216,6 +227,8 @@ class Scheduler:
         statistics = dict()
         posts = list()
         try:
+            logger.info(f'Retrieving KWE posts for {synonym} in range {from_time} to {to_time}')
+
             posts = self.local_db.get_kwe_posts(synonym, from_time, to_time)
         except Exception as e:
             print(f'Scheduler.create_snapshot: Exception encountered while retrieving posts from database: {e}')
@@ -236,6 +249,8 @@ class Scheduler:
                 # Only requests keywords if there are posts
                 if num_posts:
                     try:
+                        logger.info(f'Performing KWE on posts for {synonym}')
+
                         response = requests.post(self.kwe_api, json=dict(posts=split["posts"]),
                                                  headers=self.kwe_api_key).json()
                         keywords = response.get('keywords', [])
@@ -278,7 +293,7 @@ class Scheduler:
         self.update_synonyms(list(self.all_synonyms.union(synonyms)))
 
 
-logging.basicConfig()
+logging.basicConfig(format='%(asctime)s:%(levelname)s:%(message)s')
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
