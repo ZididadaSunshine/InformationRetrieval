@@ -5,6 +5,7 @@ from sqlalchemy.orm import joinedload
 
 from database import Synonym, Post, SynonymPostAssociation, TrustpilotPost, session_scope, RedditPost
 
+
 class DBHandler:
     def __init__(self):
         pass
