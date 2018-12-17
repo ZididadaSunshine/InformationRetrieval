@@ -3,3 +3,4 @@ praw
 sqlalchemy
 retry
 lxml
+beautifulsoup4
