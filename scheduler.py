@@ -46,7 +46,7 @@ class Scheduler:
                                      {'category': 'neutral', 'upper_limit': 0.55, 'lower_limit': 0.45}]
 
         self.kwe_interval = timedelta(hours=1)
-        self.kwe_latest = datetime(2018, 12, 3, 6)
+        self.kwe_latest = datetime(2018, 12, 10, 8)
 
         self.continue_schedule = True
         self.schedule_thread = Thread()
@@ -102,7 +102,7 @@ class Scheduler:
             self.commit_reviews(self.retrieve_posts())
 
             # Get and update sentiments for new posts
-            posts = self.fetch_new_posts(limit=100)
+            posts = self.fetch_new_posts(limit=10000)
             logger.info(f'{len(posts)} new posts fetched')
             if posts:
                 sentiments = self.calculate_sentiments(posts)
