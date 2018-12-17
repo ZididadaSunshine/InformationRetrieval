@@ -41,11 +41,12 @@ class Scheduler:
         self.synonym_api = f'http://{os.environ["GATEWAY_API_HOST"]}/api/synonyms'
         self.synonym_api_key = {'Authorization': os.environ['GATEWAY_API_KEY']}
 
-        self.sentiment_categories = [{'category': 'positive', 'upper_limit': 1, 'lower_limit': 0.5},
-                                     {'category': 'negative', 'upper_limit': 0.5, 'lower_limit': 0}]
+        self.sentiment_categories = [{'category': 'positive', 'upper_limit': 1, 'lower_limit': 0.55},
+                                     {'category': 'negative', 'upper_limit': 0.45, 'lower_limit': 0},
+                                     {'category': 'neutral', 'upper_limit': 0.55, 'lower_limit': 0.45}]
 
         self.kwe_interval = timedelta(hours=1)
-        self.kwe_latest = datetime(2018, 12, 13, 7)
+        self.kwe_latest = datetime(2018, 12, 3, 6)
 
         self.continue_schedule = True
         self.schedule_thread = Thread()
@@ -73,7 +74,7 @@ class Scheduler:
             self.scrapers[scraper].begin_crawl()
         """
         self.reddit.begin_crawl()
-        self.trustpilot.begin_crawl()
+        # self.trustpilot.begin_crawl()
 
         self.continue_schedule = True
         self.schedule_thread = Thread(target=self._threaded_schedule, name='Scheduler')
@@ -101,7 +102,7 @@ class Scheduler:
             self.commit_reviews(self.retrieve_posts())
 
             # Get and update sentiments for new posts
-            posts = self.fetch_new_posts()
+            posts = self.fetch_new_posts(limit=100)
             logger.info(f'{len(posts)} new posts fetched')
             if posts:
                 sentiments = self.calculate_sentiments(posts)
@@ -202,15 +203,16 @@ class Scheduler:
             print(f'Scheduler.fetch_all_synonyms: Exception encountered with synonym api: {e}')
             return {synonym: -1 for synonym in self.all_synonyms}
 
-    def fetch_new_posts(self, synonym=None, with_sentiment=False):
+    def fetch_new_posts(self, synonym=None, with_sentiment=False, limit=None):
         """
         Returns all newly crawled posts from the crawler and scraper that
         relate to this synonym.
         :param synonym : string
         :param with_sentiment : boolean - if set to false, only returns rows where sentiment = NULL.
+        :param limit : integer
         """
         try:
-            posts = self.local_db.get_new_posts(synonym, with_sentiment)
+            posts = self.local_db.get_new_posts(synonym, with_sentiment, limit)
             return posts
         except Exception as e:
             logger.error(f'Exception encountered while retrieving posts from database: {e}')

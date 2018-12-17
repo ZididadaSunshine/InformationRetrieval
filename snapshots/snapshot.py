@@ -28,6 +28,8 @@ class Snapshot:
             getLogger().info(f'Received status code {result.status_code} while saving snapshot.')
             if result.status_code in self.VALID_STATUS_CODES:
                 return True
+            else:
+                getLogger().error(result.text)
         except Exception as e:
             print(f'Could not establish server contact ({e}).')
 

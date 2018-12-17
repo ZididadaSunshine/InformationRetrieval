@@ -10,9 +10,14 @@ class DBHandler:
     def __init__(self):
         pass
 
-    def get_new_posts(self, synonym=None, with_sentiment=False):
+    def get_new_posts(self, synonym=None, with_sentiment=False, limit=None):
         with session_scope() as session:
-            posts = session.query(Post).filter(Post.sentiment.is_(None)).all()
+            query = session.query(Post).filter(Post.sentiment.is_(None))
+            if limit:
+                query = query.order_by(Post.date).limit(limit)
+
+            posts = query.all()
+
             return {post.id: post.contents for post in posts}
 
     def get_kwe_posts(self, syn, from_time=datetime.datetime.min , to_time=datetime.datetime.now()):
