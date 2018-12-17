@@ -1,11 +1,9 @@
 import time
-import traceback
 from datetime import datetime
 from threading import Thread
 from time import sleep
 from urllib.request import urlopen
 
-from KeywordExtraction.preprocessing.text_preprocessing import get_processed_text
 from bs4 import BeautifulSoup as bs
 from retry import retry
 
@@ -231,13 +229,11 @@ class TrustPilotCrawler:
         time = date_time[1].split(':')
         the_datetime = datetime(year=int(date[0]), month=int(date[1]), day=int(date[2]),
                                 hour=int(time[0]), minute=int(time[1]), second=int(time[2].split('.')[0]))
-        contents = f"{review['title']}. {review['body']}"
-        contents = ' '.join(get_processed_text(contents, no_stopwords=False))
         user = review['user']
         review_count = review['review_count']
         identifier = f'trustpilot-{user}-{date}-{review_count}'
 
-        self.buffer.append({"id": identifier, "synonym": synonym, "text": contents, "author": user,
+        self.buffer.append({"id": identifier, "synonym": synonym, "text": body, "author": user,
                             "date": the_datetime, "num_ratings": review_count})
 
     def get_buffer_contents(self):

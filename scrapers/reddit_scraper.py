@@ -4,7 +4,6 @@ import string
 from threading import Thread
 
 import praw
-from KeywordExtraction.preprocessing.text_preprocessing import get_processed_text
 from bs4 import BeautifulSoup
 from praw.models import Submission
 from retry import retry
@@ -56,10 +55,6 @@ class RedditScraper:
         # If no synonyms match the text, skip the entry
         if not matching_synonyms:
             return
-
-        # Process text with pre-processor module
-        # Stopwords are not removed yet, as they are needed for sentiment analysis
-        body_text = ' '.join(get_processed_text(body_text, no_stopwords=False))
 
         self.buffer.append({'id': unique_id, 'synonyms': matching_synonyms, 'text': body_text, 'author': author,
                             'date': date, 'subreddit': subreddit})
