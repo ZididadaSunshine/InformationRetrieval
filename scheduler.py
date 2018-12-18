@@ -143,7 +143,7 @@ class Scheduler:
                                                     self.kwe_latest + self.kwe_interval))
 
                 futures.wait(jobs)
-                logger.info(f'Finished {len(jobs)} futures')
+                logger.info(f'Finished {len(jobs)} futures for date {self.kwe_latest}')
 
                 self._set_kwe_date(self.kwe_latest + self.kwe_interval)
             else:

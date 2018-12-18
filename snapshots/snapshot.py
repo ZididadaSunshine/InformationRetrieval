@@ -25,9 +25,10 @@ class Snapshot:
         try:
             result = requests.post('http://172.28.198.101:8003/api/snapshots', json=data)
 
-            getLogger().info(f'Received status code {result.status_code} while saving snapshot for {self.synonym}.')
             if result.status_code in self.VALID_STATUS_CODES:
                 return True
+            else:
+                getLogger().info(f'Received status code {result.status_code} while saving snapshot for {self.synonym}.')
         except Exception as e:
             print(f'Could not establish server contact ({e}).')
 
