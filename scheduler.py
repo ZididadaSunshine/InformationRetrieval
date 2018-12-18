@@ -20,6 +20,21 @@ from snapshots.snapshot import Snapshot
 
 
 class Scheduler:
+    KWE_DATE_FORMAT = "%Y-%m-%d %H"
+    KWE_DATE_FILE = 'kwe_date.txt'
+
+    def _read_kwe_date(self):
+        if os.path.isfile(self.KWE_DATE_FILE):
+            with open(self.KWE_DATE_FILE, 'r') as f:
+                return datetime.strptime(f.readline().strip(), self.KWE_DATE_FORMAT)
+
+        return datetime(2018, 12, 1, 0)
+
+    def _set_kwe_date(self, date):
+        self.kwe_latest = date
+
+        with open(self.KWE_DATE_FILE, 'w') as f:
+            f.write(date.strftime(self.KWE_DATE_FORMAT))
 
     def __init__(self):
         self.continue_schedule = False
@@ -46,12 +61,14 @@ class Scheduler:
                                      {'category': 'neutral', 'upper_limit': 0.55, 'lower_limit': 0.45}]
 
         self.kwe_interval = timedelta(hours=1)
-        self.kwe_latest = datetime(2018, 12, 17, 16)
+        self.kwe_latest = self._read_kwe_date()
 
         self.continue_schedule = True
         self.schedule_thread = Thread()
         self.crawler_schedule_thread = Thread()
         self.begin_schedule()
+
+        logging.info(f'Initiated scheduler, will create snapshots from {self.kwe_latest}')
 
     def begin_schedule(self):
         # TODO:
@@ -83,7 +100,7 @@ class Scheduler:
         self.schedule_thread.start()
 
     def _save_snapshot(self, synonym, spans_from, spans_to):
-        snapshot = self.create_snapshot(synonym, self.kwe_latest, self.kwe_latest + self.kwe_interval)
+        snapshot = self.create_snapshot(synonym, spans_from, spans_to)
 
         if snapshot:
             snapshot.save_remotely()
@@ -99,9 +116,11 @@ class Scheduler:
             self.update_synonyms(self.fetch_all_synonyms().keys())
 
             # Get and commit new posts
+            logger.info('Retrieving posts')
             self.commit_reviews(self.retrieve_posts())
 
             # Get and update sentiments for new posts
+            logger.info('Fetching unsentimented posts')
             posts = self.fetch_new_posts(limit=10000)
             logger.info(f'{len(posts)} new posts fetched')
             if posts:
@@ -126,9 +145,9 @@ class Scheduler:
                 futures.wait(jobs)
                 logger.info(f'Finished {len(jobs)} futures')
 
-                self.kwe_latest += self.kwe_interval
+                self._set_kwe_date(self.kwe_latest + self.kwe_interval)
             else:
-                sleep(1)
+                sleep(5)
 
     def calculate_sentiments(self, posts):
         """
@@ -159,9 +178,6 @@ class Scheduler:
                     'sentiment': predictions['predictions'][i]} for i in range(0, len(predictions['predictions']))]
 
         return results
-
-    def classify_sentiment(self, prediction):
-        return prediction >= 0.5
 
     def retrieve_posts(self):
         # Get posts from each scraper
@@ -229,8 +245,6 @@ class Scheduler:
         statistics = dict()
         posts = list()
         try:
-            logger.info(f'Retrieving KWE posts for {synonym} in range {from_time} to {to_time}')
-
             posts = self.local_db.get_kwe_posts(synonym, from_time, to_time)
         except Exception as e:
             print(f'Scheduler.create_snapshot: Exception encountered while retrieving posts from database: {e}')

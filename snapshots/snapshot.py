@@ -6,7 +6,7 @@ import requests
 
 class Snapshot:
     ISO_FORMAT = '%Y-%m-%dT%H:%M:%S.%fZ'
-    VALID_STATUS_CODES = {}
+    VALID_STATUS_CODES = {201, 409}
 
     def __init__(self, spans_from, spans_to, statistics, sentiment, synonym):
         self.spans_from = spans_from
@@ -25,11 +25,9 @@ class Snapshot:
         try:
             result = requests.post('http://172.28.198.101:8003/api/snapshots', json=data)
 
-            getLogger().info(f'Received status code {result.status_code} while saving snapshot.')
+            getLogger().info(f'Received status code {result.status_code} while saving snapshot for {self.synonym}.')
             if result.status_code in self.VALID_STATUS_CODES:
                 return True
-            else:
-                getLogger().error(result.text)
         except Exception as e:
             print(f'Could not establish server contact ({e}).')
 
