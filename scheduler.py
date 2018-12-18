@@ -296,7 +296,6 @@ class Scheduler:
             return
 
         self.all_synonyms = self.all_synonyms.union(synonyms)
-        logger.info("All synonyms updated")
 
         # Update scraper synonyms
         self.reddit.use_synonyms(self.all_synonyms)
