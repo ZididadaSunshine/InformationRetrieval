@@ -1,9 +1,9 @@
-import datetime
+import os
 from contextlib import contextmanager
-from sqlalchemy import Column, ForeignKey, Integer, Text, String, create_engine, DateTime, Boolean, Float
+
+from sqlalchemy import Column, ForeignKey, Integer, Text, String, create_engine, DateTime, Float
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship, sessionmaker
-import os
 
 Base = declarative_base()
 
@@ -35,7 +35,7 @@ class Post(Base):
     date = Column(DateTime, nullable=False)
     author_id = Column(String(32), nullable=False)
     source = Column(String(50))
-    sentiment = Column(Float, nullable=True)
+    sentiment = Column(Float, nullable=True, index=True)
     __mapper_args__ = {
         'polymorphic_identity': 'post',
         'polymorphic_on': source
