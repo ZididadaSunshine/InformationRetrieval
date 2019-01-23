@@ -28,7 +28,7 @@ class Scheduler:
             with open(self.KWE_DATE_FILE, 'r') as f:
                 return datetime.strptime(f.readline().strip(), self.KWE_DATE_FORMAT)
 
-        return datetime(2018, 12, 1, 0)
+        return datetime(2019, 1, 23, 0)
 
     def _set_kwe_date(self, date):
         self.kwe_latest = date
